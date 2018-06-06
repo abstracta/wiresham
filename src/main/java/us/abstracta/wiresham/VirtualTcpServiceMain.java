@@ -101,9 +101,12 @@ public class VirtualTcpServiceMain {
     if (dumpFile != null) {
       flow.saveYml(dumpFile);
     } else {
-      VirtualTcpService service = new VirtualTcpService(port, sslEnabled, readBufferSize,
-          maxConnectionCount);
+      VirtualTcpService service = new VirtualTcpService();
+      service.setPort(port);
       service.setFlow(flow);
+      service.setSslEnabled(sslEnabled);
+      service.setReadBufferSize(readBufferSize);
+      service.setMaxConnections(maxConnectionCount);
       service.run();
     }
   }

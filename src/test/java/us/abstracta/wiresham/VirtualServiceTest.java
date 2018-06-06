@@ -104,8 +104,7 @@ public class VirtualServiceTest {
     String pass = "changeit";
     System.setProperty("javax.net.ssl.keyStore", getResourceFilePath("/keystore.jks"));
     System.setProperty("javax.net.ssl.keyStorePassword", pass);
-    service = new VirtualTcpService(true);
-    service.setFlow(loadFlow());
+    service.setSslEnabled(true);
     service.start();
     clientSocket = buildSslSocket("localhost", service.getPort());
     waitReceived("Hello");

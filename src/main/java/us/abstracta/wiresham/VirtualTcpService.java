@@ -21,42 +21,27 @@ public class VirtualTcpService implements Runnable {
 
   public static final int DEFAULT_READ_BUFFER_SIZE = 2048;
   public static final int DEFAULT_MAX_CONNECTION_COUNT = 1;
+  public static final int DYNAMIC_PORT = 0;
 
-  private static final int DYNAMIC_PORT = 0;
   private static final Logger LOG = LoggerFactory.getLogger(VirtualTcpService.class);
 
-  private final int port;
-  private final boolean sslEnabled;
-  private final int readBufferSize;
-  private final int maxConnections;
+  private int port = DYNAMIC_PORT;
   private Flow flow;
+  private boolean sslEnabled;
+  private int readBufferSize = DEFAULT_READ_BUFFER_SIZE;
+  private int maxConnections = DEFAULT_MAX_CONNECTION_COUNT;
   private boolean stopped = false;
   private ArrayList<ClientConnection> clientConnections = new ArrayList<>();
   private ExecutorService serverExecutorService;
   private ExecutorService clientExecutorService;
   private ServerSocket server;
 
-  public VirtualTcpService(int port, boolean sslEnabled, int readBufferSize, int maxConnections) {
-    this.port = port;
-    this.sslEnabled = sslEnabled;
-    this.readBufferSize = readBufferSize;
-    this.maxConnections = maxConnections;
-  }
-
-  public VirtualTcpService(boolean sslEnabled) {
-    this(DYNAMIC_PORT, sslEnabled, DEFAULT_READ_BUFFER_SIZE, DEFAULT_MAX_CONNECTION_COUNT);
-  }
-
-  public VirtualTcpService(int port) {
-    this(port, false, DEFAULT_READ_BUFFER_SIZE, DEFAULT_MAX_CONNECTION_COUNT);
-  }
-
-  public VirtualTcpService() {
-    this(false);
-  }
-
   public int getPort() {
     return server.getLocalPort();
+  }
+
+  public void setPort(int port) {
+    this.port = port;
   }
 
   public void setFlow(Flow flow) {
@@ -69,6 +54,18 @@ public class VirtualTcpService implements Runnable {
           "Read buffer size of %d bytes is not enough for receiving expected packet from client "
               + "with %s", readBufferSize, bigPacketStep.get().data));
     }
+  }
+
+  public void setSslEnabled(boolean sslEnabled) {
+    this.sslEnabled = sslEnabled;
+  }
+
+  public void setReadBufferSize(int readBufferSize) {
+    this.readBufferSize = readBufferSize;
+  }
+
+  public void setMaxConnections(int maxConnections) {
+    this.maxConnections = maxConnections;
   }
 
   public void start() throws IOException {
