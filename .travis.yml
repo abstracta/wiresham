@@ -1,0 +1,12 @@
+language: java
+jdk: oraclejdk8
+cache:
+ directories:
+   - $HOME/.m2
+deploy:
+  provider: script
+  script: bash .travis/deploy.sh
+  skip_cleanup: true
+  on:
+    tags: true
+
