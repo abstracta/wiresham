@@ -37,4 +37,4 @@ Then just run `mvn clean install` and the library will be built and installed in
 
 ### Release
 
-To release the project, define the version to be released by checking included changes since last release and following [semantic versioning](https://semver.org/). Then create a release in GitHub (including `v` as prefix of the version), this will trigger Travis build which will take care of the rest and you will be able to find the artifact in [maven central](https://search.maven.org/).
+To release the project, define the version to be released by checking included changes since last release and following [semantic versioning](https://semver.org/). Then create a release in GitHub (including `v` as prefix of the version), this will trigger Travis build which will take care of the rest and you will be able to find the artifact in [maven central](https://search.maven.org/) after [around 2 hours](https://stackoverflow.com/questions/23235892/how-long-does-sonatype-staging-take-to-sync-my-artifacts-with-maven-central).
