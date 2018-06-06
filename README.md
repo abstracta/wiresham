@@ -39,7 +39,7 @@ The general use case for the tool takes following steps:
           
           > Check what is the latest version in [releases](https://github.com/abstracta/wiresham/releases)
           
-          > Check [VirtualServiceTest](src/test/java/us/abstracta/wiresham/VirtualServiceTest.java) for simple and raw examples on how to use VirtualService class.
+          > Check [VirtualTcpServiceTest](src/test/java/us/abstracta/wiresham/VirtualTcpServiceTest.java) for simple and raw examples on how to use VirtualTcpService class.
           
 ## Build
 

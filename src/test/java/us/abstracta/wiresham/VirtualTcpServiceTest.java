@@ -22,9 +22,9 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class VirtualServiceTest {
+public class VirtualTcpServiceTest {
 
-  private static final Logger LOG = LoggerFactory.getLogger(VirtualServiceTest.class);
+  private static final Logger LOG = LoggerFactory.getLogger(VirtualTcpServiceTest.class);
 
   private static final long TIMEOUT_MILLIS = 10000;
 
