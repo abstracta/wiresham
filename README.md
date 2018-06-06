@@ -27,7 +27,19 @@ The general use case for the tool takes following steps:
           
           To convert an script run something like `java -jar wiresham-standalone.jar -d reduced-dump.yml -w 0.0.0.0 wireshark-dump.json`.
           
-          Check [VirtualServiceTest](src/test/java/us/abstracta/wiresham/VirtualServiceTest.java) for simple and raw examples on how to use VirtualService class.
+          To add Wiresham as dependency in maven project include in `pom.xml` the dependency:
+          
+          ```xml
+          <dependency>
+           <groupId>us.abstracta</groupId>
+           <artifactId>wiresham</artifactId>
+           <version>0.1</version>
+          </dependency>
+          ```
+          
+          > Check what is the latest version in [releases](https://github.com/abstracta/wiresham/releases)
+          
+          > Check [VirtualServiceTest](src/test/java/us/abstracta/wiresham/VirtualServiceTest.java) for simple and raw examples on how to use VirtualService class.
           
 ## Build
 
@@ -37,4 +49,4 @@ Then just run `mvn clean install` and the library (and standalone version) will 
 
 ## Release
 
-To release the project, define the version to be released by checking included changes since last release and following [semantic versioning](https://semver.org/). Then, create a release in GitHub (including `v` as prefix of the version, e.g. `v0.1`), this will trigger a Travis build which will take care of the rest and you will be able to find the artifact in [maven central](https://search.maven.org/) after [up to 2 hours](https://stackoverflow.com/questions/23235892/how-long-does-sonatype-staging-take-to-sync-my-artifacts-with-maven-central) (it gets to central repository in about 10 mins, but search takes longer to update).
+To release the project, define the version to be released by checking included changes since last release and following [semantic versioning](https://semver.org/). Then, create a [release](https://github.com/abstracta/wiresham/releases) (including `v` as prefix of the version, e.g. `v0.1`), this will trigger a Travis build which will take care of the rest and you will be able to find the artifact in [maven central](https://search.maven.org/) after [up to 2 hours](https://stackoverflow.com/questions/23235892/how-long-does-sonatype-staging-take-to-sync-my-artifacts-with-maven-central) (it gets to central repository in about 10 mins, but search takes longer to update).
