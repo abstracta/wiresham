@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.util.concurrent.TimeUnit;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
@@ -18,6 +19,8 @@ import org.slf4j.LoggerFactory;
  * @see VirtualTcpService
  */
 public class VirtualTcpServiceMain {
+
+  private static final long STOP_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(10);
 
   @Option(name = "-p", aliases = "--port", metaVar = "port",
       usage = "Port to receive connections to the virtual service")
@@ -53,6 +56,9 @@ public class VirtualTcpServiceMain {
   @Option(name = "-v", aliases = "--verbose", usage = "Logs debug messages")
   private boolean verbose;
 
+  @Option(name = "-vv", aliases = "--super-verbose", usage = "Logs trace messages")
+  private boolean superVerbose;
+
   @Option(name = "-h", aliases = "--help", usage = "Show usage information", help = true)
   private boolean displayHelp;
 
@@ -64,7 +70,7 @@ public class VirtualTcpServiceMain {
     return displayHelp;
   }
 
-  public static void main(String[] args) throws IOException {
+  public static void main(String[] args) throws IOException, InterruptedException {
     VirtualTcpServiceMain main = new VirtualTcpServiceMain();
     CmdLineParser parser = new CmdLineParser(main);
     try {
@@ -91,9 +97,9 @@ public class VirtualTcpServiceMain {
         + command + " -d login-invalid-creds.yml -w 0.0.0.0 login-invalid-creds-wireshark.json\n");
   }
 
-  private void run() throws IOException {
+  private void run() throws IOException, InterruptedException {
     Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-    root.setLevel(verbose ? Level.DEBUG : Level.INFO);
+    root.setLevel(superVerbose ? Level.TRACE : verbose ? Level.DEBUG : Level.INFO);
 
     Flow flow = wiresharkServerAddress != null
         ? Flow.fromWiresharkJsonDump(configFile, wiresharkServerAddress)
@@ -107,7 +113,15 @@ public class VirtualTcpServiceMain {
       service.setSslEnabled(sslEnabled);
       service.setReadBufferSize(readBufferSize);
       service.setMaxConnections(maxConnectionCount);
-      service.run();
+      service.start();
+      try {
+        synchronized (this) {
+          this.wait();
+        }
+      } catch (InterruptedException e) {
+        service.stop(STOP_TIMEOUT_MILLIS);
+        Thread.currentThread().interrupt();
+      }
     }
   }
 
