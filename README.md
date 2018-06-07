@@ -1,7 +1,7 @@
 # Wiresham
 Simple TCP service mocking tool for replaying [Wireshark](https://www.wireshark.org/) captured service traffic.
 
-This project is inspired in other like [WireMock](http://wiremock.org/), [mountebank](http://www.mbtest.org/) and [MockTCPServer](https://github.com/CloudRacer/MockTCPServer) but provides following features that are partially supported for some tools:
+This project is inspired in other tools like [WireMock](http://wiremock.org/), [mountebank](http://www.mbtest.org/) and [MockTCPServer](https://github.com/CloudRacer/MockTCPServer), but provides following features that are partially supported by listed tools:
   * TCP mocking support, with async messages sent (i.e: allows sending welcome messages which are not supported by mountebank).
   * Load mocking specification from Wireshark `.json` dump files and provides a reduced `.yaml` format for easy versioning.
   * Allows to easily run the mock embedded in Java projects for easy testing
@@ -49,4 +49,5 @@ Then just run `mvn clean install` and the library (and standalone version) will 
 
 ## Release
 
-To release the project, define the version to be released by checking included changes since last release and following [semantic versioning](https://semver.org/). Then, create a [release](https://github.com/abstracta/wiresham/releases) (including `v` as prefix of the version, e.g. `v0.1`), this will trigger a Travis build which will take care of the rest and you will be able to find the artifact in [maven central](https://search.maven.org/) after [up to 2 hours](https://stackoverflow.com/questions/23235892/how-long-does-sonatype-staging-take-to-sync-my-artifacts-with-maven-central) (it gets to central repository in about 10 mins, but search takes longer to update).
+To release the project, define the version to be released by checking included changes since last release and following [semantic versioning](https://semver.org/). 
+Then, create a [release](https://github.com/abstracta/wiresham/releases) (including `v` as prefix of the version, e.g. `v0.1`), this will trigger a Travis build which will publish the jars to maven central repository (and make it general available to be used as maven dependency projects) in around 10 mins and can be found in [maven central search](https://search.maven.org/#search%7Cgav%7C1%7Cg%3A%22us.abstracta%22%20AND%20a%3A%22wiresham%22) after up to 2 hours.
