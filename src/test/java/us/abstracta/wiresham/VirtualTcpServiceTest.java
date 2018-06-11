@@ -101,9 +101,8 @@ public class VirtualTcpServiceTest {
   public void shouldGetExpectedResponseWhenConnectSsl() throws Exception {
     clientSocket.close();
     service.stop(TIMEOUT_MILLIS);
-    String pass = "changeit";
     System.setProperty("javax.net.ssl.keyStore", getResourceFilePath("/keystore.jks"));
-    System.setProperty("javax.net.ssl.keyStorePassword", pass);
+    System.setProperty("javax.net.ssl.keyStorePassword", "changeit");
     service.setSslEnabled(true);
     service.start();
     clientSocket = buildSslSocket("localhost", service.getPort());
