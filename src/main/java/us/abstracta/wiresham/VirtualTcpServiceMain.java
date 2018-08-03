@@ -109,10 +109,10 @@ public class VirtualTcpServiceMain {
     } else {
       VirtualTcpService service = new VirtualTcpService();
       service.setPort(port);
-      service.setFlow(flow);
       service.setSslEnabled(sslEnabled);
       service.setReadBufferSize(readBufferSize);
       service.setMaxConnections(maxConnectionCount);
+      service.setFlow(flow);
       service.start();
       try {
         synchronized (this) {
