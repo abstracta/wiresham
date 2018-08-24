@@ -22,9 +22,10 @@ public class ClientPacketStep extends PacketStep {
   @Override
   public void process(ClientConnection clientConnection) throws IOException {
     ByteBuffer dataBuffer = ByteBuffer.wrap(data.getBytes());
-    ByteBuffer readBuffer;
     LOG.debug("Waiting for {}", data);
-    while ((readBuffer = clientConnection.read()) != null) {
+    boolean receivedExpected = false;
+    while (!receivedExpected) {
+      ByteBuffer readBuffer = clientConnection.read();
       int foundPos = findDataInBuffer(dataBuffer, readBuffer);
       if (foundPos != -1) {
         if (foundPos != 0 && LOG.isTraceEnabled()) {
@@ -34,7 +35,7 @@ public class ClientPacketStep extends PacketStep {
         LOG.debug("received expected {}", data);
         readBuffer.compact();
         readBuffer.flip();
-        return;
+        receivedExpected = true;
       } else if (readBuffer.limit() == readBuffer.capacity()) {
         int markedPosition = getMarkedPosition(readBuffer);
         if (markedPosition != -1) {
@@ -54,7 +55,6 @@ public class ClientPacketStep extends PacketStep {
         }
       }
     }
-    throw new ConnectionClosedException();
   }
 
   private int findDataInBuffer(ByteBuffer dataBuffer, ByteBuffer readBuffer) {

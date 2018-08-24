@@ -7,8 +7,15 @@ import java.io.IOException;
  */
 public class ConnectionClosedException extends IOException {
 
-  public ConnectionClosedException() {
+  private final Packet discardedPacket;
+
+  public ConnectionClosedException(Packet discardedPacket) {
     super("Connection closed by remote end while waiting for packet");
+    this.discardedPacket = discardedPacket;
   }
 
+  public Packet getDiscardedPacket() {
+    return discardedPacket;
+  }
+  
 }

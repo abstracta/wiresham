@@ -41,7 +41,8 @@ public class ClientConnection implements Runnable {
       }
       LOG.info("flow completed!");
     } catch (ConnectionClosedException e) {
-      LOG.warn("Connection closed by client while waiti", e);
+      LOG.warn("Connection closed by client while waiting for client packet", e);
+      LOG.debug("Discarding client packet {}", e.getDiscardedPacket());
     } catch (IOException e) {
       if (closed) {
         LOG.trace("Received expected exception when server socket has been closed", e);
@@ -77,7 +78,8 @@ public class ClientConnection implements Runnable {
       int count = socket.getInputStream().read(readBuffer.array(), readBuffer.position(),
           readBuffer.capacity() - readBuffer.position());
       if (count == -1) {
-        return null;
+        throw new ConnectionClosedException(
+            Packet.fromBytes(readBuffer.array(), 0, readBuffer.position()));
       }
       readBuffer.limit(readBuffer.position() + count);
       if (LOG.isTraceEnabled()) {
