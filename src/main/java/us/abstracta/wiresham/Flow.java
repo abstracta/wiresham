@@ -4,16 +4,27 @@ import com.fasterxml.jackson.core.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.io.BaseEncoding;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import org.pcap4j.core.BpfProgram.BpfCompileMode;
+import org.pcap4j.core.NotOpenException;
+import org.pcap4j.core.PcapHandle;
+import org.pcap4j.core.PcapNativeException;
+import org.pcap4j.core.Pcaps;
+import org.pcap4j.packet.IpV4Packet;
+import org.pcap4j.packet.TcpPacket;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -54,10 +65,10 @@ public class Flow {
     return steps.toString();
   }
 
-  public static Flow fromWiresharkJsonDump(File wiresharkJsonDumpFile, String serverAddress)
+  public static Flow fromWiresharkJsonDump(File file, String serverAddress)
       throws IOException {
     ObjectMapper mapper = new ObjectMapper();
-    JsonNode json = mapper.readTree(wiresharkJsonDumpFile);
+    JsonNode json = mapper.readTree(file);
     return new Flow(StreamSupport.stream(json.spliterator(), false)
         .filter(packet -> !packet.at(WIRESHARK_LAYERS_PATH).at(WIRESHARK_TCP_PAYLOAD_PATH).asText()
             .isEmpty())
@@ -73,6 +84,40 @@ public class Flow {
               : new ClientPacketStep(hexDump);
         })
         .collect(Collectors.toList()));
+  }
+
+  public static Flow fromPcap(File file, String serverAddress, String filter) throws IOException {
+    List<PacketStep> steps = new ArrayList<>();
+    try (PcapHandle pcap = Pcaps.openOffline(file.getAbsolutePath())) {
+      if (filter != null) {
+        pcap.setFilter(filter, BpfCompileMode.OPTIMIZE);
+      }
+      long lastTimeMillis = 0;
+      // we can't use getNextPacket and do a while != null due to https://github.com/kaitoy/pcap4j/issues/13
+      // so we use getNextPacketEx which throws an EOFException when reached end of file
+      while (true) {
+        org.pcap4j.packet.Packet p = pcap.getNextPacketEx();
+        if (!p.contains(TcpPacket.class)) {
+          continue;
+        }
+        org.pcap4j.packet.Packet payload = p.get(TcpPacket.class).getPayload();
+        if (payload == null) {
+          continue;
+        }
+        String sourceIp = p.get(IpV4Packet.class).getHeader().getSrcAddr().getHostAddress();
+        String hexDump = BaseEncoding.base16().encode(payload.getRawData());
+        long timeMillis = pcap.getTimestamp().getTime();
+        long timeDeltaMillis = lastTimeMillis > 0 ? timeMillis - lastTimeMillis : 0;
+        lastTimeMillis = timeMillis;
+        steps.add(serverAddress.equals(sourceIp) ? new ServerPacketStep(hexDump, timeDeltaMillis)
+            : new ClientPacketStep(hexDump));
+      }
+    } catch (EOFException e) {
+      //just ignore if we reached end of file.
+    } catch (TimeoutException | PcapNativeException | NotOpenException e) {
+      throw new IOException("Problem reading file " + file, e);
+    }
+    return new Flow(steps);
   }
 
   @SuppressWarnings("unchecked")

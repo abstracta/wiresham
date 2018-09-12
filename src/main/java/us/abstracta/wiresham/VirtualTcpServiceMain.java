@@ -42,10 +42,14 @@ public class VirtualTcpServiceMain {
           + "javax.net.ssl.keyStorePassword to tune the configuration.")
   private boolean sslEnabled;
 
-  @Option(name = "-w", aliases = "--wireshark-server-address", metaVar = "ip address",
-      usage = "When specified, the flow config file is interpreted as a Wireshark generated JSON "
-          + "dump file and this IP address identifies the service to be virtualized")
-  private String wiresharkServerAddress;
+  @Option(name = "-a", aliases = "--server-address", metaVar = "ip address",
+      usage = "When using a Wireshark generated JSON dump or PCAP file, this parameter specifies "
+          + "the IP address which identifies the service to be virtualized")
+  private String serverAddress;
+
+  @Option(name = "-f", aliases = "--pcap-filter-expression", metaVar = "expression",
+      usage = "Expression used to filter packets from a PCAP file. Eg: 'port 23'")
+  private String pcapFilter;
 
   @Option(name = "-d", aliases = "--dump-file", metaVar = ".yml file",
       usage = "File path to dump loaded flow config. The virtual service will not be started when "
@@ -93,7 +97,9 @@ public class VirtualTcpServiceMain {
     printStream.println();
     printStream.println("  Examples: \n"
         + command + " -p 2324 login-invalid-creds.yml\n"
-        + command + " -p 2324 -w 0.0.0.0 login-invalid-creds-wireshark.json\n"
+        + command + " -p 2324 -a 0.0.0.0 login-invalid-creds-wireshark.json\n"
+        + command + " -p 2324 -a 0.0.0.0 login-invalid-creds.pcap\n"
+        + command + " -p 2324 -a 0.0.0.0 -f \"port 23\" login-invalid-creds.pcap\n"
         + command + " -d login-invalid-creds.yml -w 0.0.0.0 login-invalid-creds-wireshark.json\n");
   }
 
@@ -101,9 +107,7 @@ public class VirtualTcpServiceMain {
     Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
     root.setLevel(superVerbose ? Level.TRACE : verbose ? Level.DEBUG : Level.INFO);
 
-    Flow flow = wiresharkServerAddress != null
-        ? Flow.fromWiresharkJsonDump(configFile, wiresharkServerAddress)
-        : Flow.fromYml(configFile);
+    Flow flow = loadFlow();
     if (dumpFile != null) {
       flow.saveYml(dumpFile);
     } else {
@@ -122,6 +126,18 @@ public class VirtualTcpServiceMain {
         service.stop(STOP_TIMEOUT_MILLIS);
         Thread.currentThread().interrupt();
       }
+    }
+  }
+
+  public Flow loadFlow() throws IOException {
+    if (serverAddress != null) {
+      if (configFile.getName().toLowerCase().endsWith(".json")) {
+        return Flow.fromWiresharkJsonDump(configFile, serverAddress);
+      } else {
+        return Flow.fromPcap(configFile, serverAddress, pcapFilter);
+      }
+    } else {
+      return Flow.fromYml(configFile);
     }
   }
 
