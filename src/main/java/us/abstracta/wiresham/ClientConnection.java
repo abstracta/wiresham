@@ -41,8 +41,8 @@ public class ClientConnection implements Runnable {
       }
       LOG.info("flow completed!");
     } catch (ConnectionClosedException e) {
-      LOG.warn("Connection closed by client while waiting for client packet", e);
-      LOG.debug("Discarding client packet {}", e.getDiscardedPacket());
+      LOG.info("Connection closed by client while waiting for client packet");
+      LOG.debug("Discarding client packet {}", e.getDiscardedPacket(), e);
     } catch (IOException e) {
       if (closed) {
         LOG.trace("Received expected exception when server socket has been closed", e);
