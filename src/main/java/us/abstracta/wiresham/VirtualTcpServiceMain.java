@@ -100,7 +100,7 @@ public class VirtualTcpServiceMain {
         + command + " -p 2324 -a 0.0.0.0 login-invalid-creds-wireshark.json\n"
         + command + " -p 2324 -a 0.0.0.0 login-invalid-creds.pcap\n"
         + command + " -p 2324 -a 0.0.0.0 -f \"port 23\" login-invalid-creds.pcap\n"
-        + command + " -d login-invalid-creds.yml -w 0.0.0.0 login-invalid-creds-wireshark.json\n");
+        + command + " -d login-invalid-creds.yml -a 0.0.0.0 login-invalid-creds-wireshark.json\n");
   }
 
   private void run() throws IOException, InterruptedException {
