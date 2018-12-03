@@ -1,4 +1,7 @@
-# Wiresham
+<p align="center">
+  <img width="300" src="https://raw.githubusercontent.com/abstracta/wiresham/master/logo.svg?sanitize=true"/>
+</p>
+<br/>
 
 Simple TCP service mocking tool for replaying [tcpdump](http://www.tcpdump.org/) or [Wireshark](https://www.wireshark.org/) captured service traffic.
 
