@@ -9,10 +9,9 @@
         <property name="eachLine" value="true"/>
     </module>
 
-    <module name="SuppressionCommentFilter"/>
-
     <module name="TreeWalker">
-        <module name="FileContentsHolder"/>
+
+        <module name="SuppressionCommentFilter"/>
 
         <module name="AnnotationLocation"/>
 

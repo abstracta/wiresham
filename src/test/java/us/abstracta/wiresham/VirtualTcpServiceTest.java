@@ -1,5 +1,8 @@
 package us.abstracta.wiresham;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
+
 import com.google.common.base.Charsets;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -9,6 +12,7 @@ import java.net.Socket;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -16,9 +20,9 @@ import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +36,7 @@ public class VirtualTcpServiceTest {
 
   private Socket clientSocket;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     service.setFlow(loadFlow());
     service.start();
@@ -47,28 +51,30 @@ public class VirtualTcpServiceTest {
     return getClass().getResource(resourcePath).getFile();
   }
 
-  @After
+  @AfterEach
   public void tearDown() throws Exception {
     clientSocket.close();
     service.stop(TIMEOUT_MILLIS);
   }
 
-  @Test(timeout = TIMEOUT_MILLIS)
-  public void shouldGetExpectedResponseWhenConnect() throws Exception {
+  @Test
+  public void shouldGetExpectedResponseWhenConnect() {
     waitReceived("Hello");
   }
 
-  private void waitReceived(String message) throws IOException {
-    InputStream input = clientSocket.getInputStream();
-    byte[] buffer = new byte[message.length()];
-    int offset = 0;
-    while (!message.equals(new String(buffer, Charsets.UTF_8))) {
-      offset += input.read(buffer, offset, message.length() - offset);
-      LOG.debug("Received so far: {}", new String(buffer, Charsets.UTF_8));
-    }
+  private void waitReceived(String message) {
+    assertTimeout(Duration.ofMillis(TIMEOUT_MILLIS), () -> {
+      InputStream input = clientSocket.getInputStream();
+      byte[] buffer = new byte[message.length()];
+      int offset = 0;
+      while (!message.equals(new String(buffer, Charsets.UTF_8))) {
+        offset += input.read(buffer, offset, message.length() - offset);
+        LOG.debug("Received so far: {}", new String(buffer, Charsets.UTF_8));
+      }
+    });
   }
 
-  @Test(timeout = TIMEOUT_MILLIS)
+  @Test
   public void shouldGetExpectedResponseWhenSendExpectedInput() throws Exception {
     waitReceived("Hello");
     send("Hello, I'm John");
@@ -79,16 +85,16 @@ public class VirtualTcpServiceTest {
     clientSocket.getOutputStream().write(message.getBytes(Charsets.UTF_8));
   }
 
-  @Test(timeout = TIMEOUT_MILLIS, expected = TimeoutException.class)
+  @Test
   public void shouldGetNoResponseWhenSendUnexpectedInput() throws Exception {
     waitReceived("Hello");
     send("What's up!");
     Future<Integer> receivedResponse = Executors.newSingleThreadExecutor()
         .submit(() -> clientSocket.getInputStream().read());
-    receivedResponse.get(3, TimeUnit.SECONDS);
+    assertThrows(TimeoutException.class, () -> receivedResponse.get(3, TimeUnit.SECONDS));
   }
 
-  @Test(timeout = TIMEOUT_MILLIS)
+  @Test
   public void shouldGetNoExpectedResponseWhenSendExpectedInputAfterUnexpectedOne()
       throws Exception {
     waitReceived("Hello");
@@ -97,7 +103,7 @@ public class VirtualTcpServiceTest {
     waitReceived("Hello John");
   }
 
-  @Test(timeout = TIMEOUT_MILLIS)
+  @Test
   public void shouldGetExpectedResponseWhenConnectSsl() throws Exception {
     clientSocket.close();
     service.stop(TIMEOUT_MILLIS);

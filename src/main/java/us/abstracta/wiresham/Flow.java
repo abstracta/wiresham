@@ -38,7 +38,7 @@ import org.yaml.snakeyaml.representer.Representer;
  */
 public class Flow {
 
-  private static final Map<String, Class> YAML_TAGS = ImmutableMap.<String, Class>builder()
+  private static final Map<String, Class<?>> YAML_TAGS = ImmutableMap.<String, Class<?>>builder()
       .put("!server", ServerPacketStep.class)
       .put("!client", ClientPacketStep.class)
       .build();
@@ -120,21 +120,18 @@ public class Flow {
     return new Flow(steps);
   }
 
-  @SuppressWarnings("unchecked")
   public static Flow fromYml(File ymlFile) throws FileNotFoundException {
-    List<PacketStep> packets = (List<PacketStep>) new Yaml(buildYamlConstructor())
+    List<PacketStep> packets = new Yaml(buildYamlConstructor())
         .load(new FileInputStream(ymlFile));
     return new Flow(packets);
   }
 
-  @SuppressWarnings("unchecked")
   public static Flow fromYmlStream(InputStream stream) {
-    List<PacketStep> packets = (List<PacketStep>) new Yaml(buildYamlConstructor())
+    List<PacketStep> packets = new Yaml(buildYamlConstructor())
         .load(stream);
     return new Flow(packets);
   }
 
-  @SuppressWarnings("unchecked")
   private static Constructor buildYamlConstructor() {
     Constructor constructor = new Constructor();
     YAML_TAGS
@@ -147,7 +144,6 @@ public class Flow {
         .dump(steps, new FileWriter(ymlFile));
   }
 
-  @SuppressWarnings("unchecked")
   private static Representer buildYamlRepresenter() {
     Representer representer = new Representer() {
       @Override
