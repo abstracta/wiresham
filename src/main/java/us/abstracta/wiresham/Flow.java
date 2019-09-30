@@ -82,7 +82,8 @@ public class Flow {
           long timeDeltaMillis =
               Long.valueOf(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
                   / 1000000;
-          return isServer(serverAddress, ipSource, tcpSource) ? new ServerPacketStep(hexDump, timeDeltaMillis)
+          return isServer(serverAddress, ipSource, tcpSource)
+                  ? new ServerPacketStep(hexDump, timeDeltaMillis)
               : new ClientPacketStep(hexDump);
         })
         .collect(Collectors.toList()));
@@ -90,7 +91,7 @@ public class Flow {
 
   private static boolean isServer(String serverAddress, String address, String port) {
     String[] addressParsed = serverAddress.split(":");
-    if(addressParsed.length == 2) {
+    if (addressParsed.length == 2) {
       return addressParsed[0].equals(address) && addressParsed[1].equals(port);
     }
     return serverAddress.equals(address);
