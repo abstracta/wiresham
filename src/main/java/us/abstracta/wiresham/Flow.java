@@ -47,6 +47,7 @@ public class Flow {
   private static final JsonPointer WIRESHARK_TCP_PAYLOAD_PATH = JsonPointer
       .valueOf("/tcp/tcp.payload");
   private static final JsonPointer WIRESHARK_IP_PATH = JsonPointer.valueOf("/ip/ip.src");
+  private static final JsonPointer WIRESHARK_TCP_PATH = JsonPointer.valueOf("/tcp/tcp.srcport");
   private static final JsonPointer WIRESHARK_TIME_DELTA_PATH = JsonPointer
       .valueOf("/frame/frame.time_delta_displayed");
 
@@ -75,15 +76,24 @@ public class Flow {
         .map(packet -> {
           JsonNode layers = packet.at(WIRESHARK_LAYERS_PATH);
           String ipSource = layers.at(WIRESHARK_IP_PATH).asText();
+          String tcpSource = layers.at(WIRESHARK_TCP_PATH).asText();
           String hexDump = layers.at(WIRESHARK_TCP_PAYLOAD_PATH).asText()
               .replace(":", "");
           long timeDeltaMillis =
               Long.valueOf(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
                   / 1000000;
-          return serverAddress.equals(ipSource) ? new ServerPacketStep(hexDump, timeDeltaMillis)
+          return isServer(serverAddress, ipSource, tcpSource) ? new ServerPacketStep(hexDump, timeDeltaMillis)
               : new ClientPacketStep(hexDump);
         })
         .collect(Collectors.toList()));
+  }
+
+  private static boolean isServer(String serverAddress, String address, String port) {
+    String[] addressParsed = serverAddress.split(":");
+    if(addressParsed.length == 2) {
+      return addressParsed[0].equals(address) && addressParsed[1].equals(port);
+    }
+    return serverAddress.equals(address);
   }
 
   public static Flow fromPcap(File file, String serverAddress, String filter) throws IOException {

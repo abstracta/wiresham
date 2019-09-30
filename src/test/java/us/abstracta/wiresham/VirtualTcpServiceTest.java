@@ -2,6 +2,7 @@ package us.abstracta.wiresham;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.common.base.Charsets;
 import java.io.File;
@@ -113,6 +114,26 @@ public class VirtualTcpServiceTest {
     service.start();
     clientSocket = buildSslSocket("localhost", service.getPort());
     waitReceived("Hello");
+  }
+
+  @Test
+  public void shouldReadWiresharkJsonAndParseServerPort() throws Exception {
+    Flow flow = Flow.fromWiresharkJsonDump(new File(getResourceFilePath("/serverOnLocalPort3469.json")),
+            "127.0.0.1:3469");
+    assertTrue(flow.getSteps().get(0) instanceof ClientPacketStep, "First flow element should be from client");
+    assertTrue(flow.getSteps().get(1) instanceof ServerPacketStep, "Second flow element should be from server");
+    assertTrue(flow.getSteps().get(2) instanceof ClientPacketStep, "Third flow element should be from client");
+    assertTrue(flow.getSteps().get(3) instanceof ServerPacketStep, "Fourth flow element should be from server");
+  }
+
+  @Test
+  public void shouldReadWiresharkJsonAndParseServerIp() throws Exception {
+    Flow flow = Flow.fromWiresharkJsonDump(new File(getResourceFilePath("/serverOnLocalPort3469.json")),
+            "127.0.0.1");
+    assertTrue(flow.getSteps().get(0) instanceof ServerPacketStep, "First flow element should be from client");
+    assertTrue(flow.getSteps().get(1) instanceof ServerPacketStep, "Second flow element should be from server");
+    assertTrue(flow.getSteps().get(2) instanceof ServerPacketStep, "Third flow element should be from client");
+    assertTrue(flow.getSteps().get(3) instanceof ServerPacketStep, "Fourth flow element should be from server");
   }
 
   private Socket buildSslSocket(String host, int port)
