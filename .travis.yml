@@ -1,5 +1,7 @@
 language: java
 jdk: oraclejdk8
+# we use this distro to avoid issue when installing oraclejdk8
+dist: trusty
 cache:
  directories:
    - $HOME/.m2
