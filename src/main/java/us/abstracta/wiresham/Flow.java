@@ -46,9 +46,12 @@ public class Flow {
   private static final JsonPointer WIRESHARK_LAYERS_PATH = JsonPointer.valueOf("/_source/layers");
   private static final JsonPointer WIRESHARK_TCP_PAYLOAD_PATH = JsonPointer
       .valueOf("/tcp/tcp.payload");
-  private static final JsonPointer WIRESHARK_IP_PATH = JsonPointer.valueOf("/ip/ip.src");
+  private static final JsonPointer WIRESHARK_SOURCE_IP_PATH = JsonPointer.valueOf("/ip/ip.src");
+  private static final JsonPointer WIRESHARK_SOURCE_PORT_PATH = JsonPointer
+      .valueOf("/tcp/tcp.srcport");
   private static final JsonPointer WIRESHARK_TIME_DELTA_PATH = JsonPointer
       .valueOf("/frame/frame.time_delta_displayed");
+  private static final String IP_PORT_SEPARATOR = ":";
 
   private final List<PacketStep> steps;
 
@@ -74,16 +77,23 @@ public class Flow {
             .isEmpty())
         .map(packet -> {
           JsonNode layers = packet.at(WIRESHARK_LAYERS_PATH);
-          String ipSource = layers.at(WIRESHARK_IP_PATH).asText();
+          String sourceIp = layers.at(WIRESHARK_SOURCE_IP_PATH).asText();
+          String sourcePort = layers.at(WIRESHARK_SOURCE_PORT_PATH).asText();
           String hexDump = layers.at(WIRESHARK_TCP_PAYLOAD_PATH).asText()
               .replace(":", "");
           long timeDeltaMillis =
-              Long.valueOf(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
+              Long.parseLong(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
                   / 1000000;
-          return serverAddress.equals(ipSource) ? new ServerPacketStep(hexDump, timeDeltaMillis)
-              : new ClientPacketStep(hexDump);
+          return isServerAddress(sourceIp, sourcePort, serverAddress) ? new ServerPacketStep(
+              hexDump, timeDeltaMillis) : new ClientPacketStep(hexDump);
         })
         .collect(Collectors.toList()));
+  }
+
+  private static boolean isServerAddress(String sourceIp, String sourcePort, String serverAddress) {
+    return serverAddress.contains(IP_PORT_SEPARATOR)
+        && (sourceIp + IP_PORT_SEPARATOR + sourcePort).equals(serverAddress)
+        || serverAddress.equals(sourceIp);
   }
 
   public static Flow fromPcap(File file, String serverAddress, String filter) throws IOException {

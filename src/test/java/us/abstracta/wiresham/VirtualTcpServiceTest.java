@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import com.google.common.base.Charsets;
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -44,11 +43,7 @@ public class VirtualTcpServiceTest {
   }
 
   private Flow loadFlow() throws FileNotFoundException {
-    return Flow.fromYml(new File(getResourceFilePath("/simple.yaml")));
-  }
-
-  private String getResourceFilePath(String resourcePath) {
-    return getClass().getResource(resourcePath).getFile();
+    return Flow.fromYml(TestResource.getResourceFile("/simple.yaml"));
   }
 
   @AfterEach
@@ -107,7 +102,8 @@ public class VirtualTcpServiceTest {
   public void shouldGetExpectedResponseWhenConnectSsl() throws Exception {
     clientSocket.close();
     service.stop(TIMEOUT_MILLIS);
-    System.setProperty("javax.net.ssl.keyStore", getResourceFilePath("/keystore.jks"));
+    System.setProperty("javax.net.ssl.keyStore",
+        TestResource.getResourceFile("/keystore.jks").getAbsolutePath());
     System.setProperty("javax.net.ssl.keyStorePassword", "changeit");
     service.setSslEnabled(true);
     service.start();

@@ -42,9 +42,10 @@ public class VirtualTcpServiceMain {
           + "javax.net.ssl.keyStorePassword to tune the configuration.")
   private boolean sslEnabled;
 
-  @Option(name = "-a", aliases = "--server-address", metaVar = "ip address",
+  @Option(name = "-a", aliases = "--server-address", metaVar = "ip:port",
       usage = "When using a Wireshark generated JSON dump or PCAP file, this parameter specifies "
-          + "the IP address which identifies the service to be virtualized")
+          + "the IP address (and optionally the port, when server and port are in same ip) which "
+          + "identifies the service to be virtualized")
   private String serverAddress;
 
   @Option(name = "-f", aliases = "--pcap-filter-expression", metaVar = "expression",

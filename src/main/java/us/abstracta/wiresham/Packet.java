@@ -14,10 +14,6 @@ public class Packet {
     this.bytes = bytes;
   }
 
-  public String toString() {
-    return BaseEncoding.base16().encode(bytes);
-  }
-
   public static Packet fromHexDump(String hexDump) {
     return new Packet(BaseEncoding.base16().decode(hexDump.toUpperCase()));
   }
@@ -28,6 +24,27 @@ public class Packet {
 
   public byte[] getBytes() {
     return bytes;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    Packet packet = (Packet) o;
+    return Arrays.equals(bytes, packet.bytes);
+  }
+
+  @Override
+  public int hashCode() {
+    return Arrays.hashCode(bytes);
+  }
+
+  public String toString() {
+    return BaseEncoding.base16().encode(bytes);
   }
 
 }
