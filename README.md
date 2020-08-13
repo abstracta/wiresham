@@ -34,9 +34,9 @@ The general use case for the tool takes following steps:
           
           > Run `java -jar wiresham-standalone.jar -h` to get usage instructions and help.
           
-      1. Convert the tcpdump or Wireshark dump to the a reduced `.yaml` file (an example file can be found in [simple.yaml](src/test/resources/simple.yaml)), optionally manually tune it (response times or binary packets), add it to the project repository and implement tests using [VirtualTcpService class](src/main/java/us/abstracta/wiresham/VirtualTcpService.java).
+      1. Convert the tcpdump or Wireshark dump to a reduced `.yaml` file (an example file can be found in [simple.yaml](src/test/resources/simple.yaml)), optionally manually tune it (response times or binary packets), add it to the project repository and implement tests using [VirtualTcpService class](src/main/java/us/abstracta/wiresham/VirtualTcpService.java).
           
-          To convert an script run something like `java -jar wiresham-standalone.jar -d reduced-dump.yml -a 0.0.0.0 wireshark-dump.json`.
+          To convert a script run something like `java -jar wiresham-standalone.jar -d reduced-dump.yml -a 0.0.0.0 wireshark-dump.json`.
           
           To add Wiresham as dependency in maven project include in `pom.xml` the dependency:
           

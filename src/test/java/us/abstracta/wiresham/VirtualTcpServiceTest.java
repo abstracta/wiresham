@@ -28,11 +28,9 @@ import org.slf4j.LoggerFactory;
 public class VirtualTcpServiceTest {
 
   private static final Logger LOG = LoggerFactory.getLogger(VirtualTcpServiceTest.class);
-
   private static final long TIMEOUT_MILLIS = 10000;
 
-  private VirtualTcpService service = new VirtualTcpService();
-
+  private final VirtualTcpService service = new VirtualTcpService();
   private Socket clientSocket;
 
   @BeforeEach

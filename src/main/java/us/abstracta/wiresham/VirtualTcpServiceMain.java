@@ -130,7 +130,7 @@ public class VirtualTcpServiceMain {
     }
   }
 
-  public Flow loadFlow() throws IOException {
+  private Flow loadFlow() throws IOException {
     if (serverAddress != null) {
       if (configFile.getName().toLowerCase().endsWith(".json")) {
         return Flow.fromWiresharkJsonDump(configFile, serverAddress);

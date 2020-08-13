@@ -31,7 +31,7 @@ public class VirtualTcpService implements Runnable {
   private int readBufferSize = DEFAULT_READ_BUFFER_SIZE;
   private int maxConnections = DEFAULT_MAX_CONNECTION_COUNT;
   private boolean stopped = false;
-  private ArrayList<ClientConnection> clientConnections = new ArrayList<>();
+  private final ArrayList<ClientConnection> clientConnections = new ArrayList<>();
   private ExecutorService serverExecutorService;
   private ExecutorService clientExecutorService;
   private ServerSocket server;
