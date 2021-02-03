@@ -14,8 +14,8 @@ public class FlowTest {
     Flow flow = Flow.fromWiresharkJsonDump(TestResource.getResourceFile("/serverOnLocalPort.json"),
         "127.0.0.1:3469");
     assertEquals(flow.getSteps(), Arrays.asList(
-        new ClientPacketStep("43485F4643457C31307C0D0A"),
-        new ServerPacketStep("5245535F4643457C547C332E302E3135352E313731FF", 0)
+        new ReceivePacketStep("43485F4643457C31307C0D0A"),
+        new SendPacketStep("5245535F4643457C547C332E302E3135352E313731FF", 0)
     ));
   }
 

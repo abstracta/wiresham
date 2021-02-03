@@ -5,7 +5,9 @@ import ch.qos.logback.classic.Logger;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
@@ -25,6 +27,10 @@ public class VirtualTcpServiceMain {
   @Option(name = "-p", aliases = "--port", metaVar = "port",
       usage = "Port to receive connections to the virtual service")
   private int port;
+
+  @Option(name = "-t", aliases = "--target-server-address", metaVar = "targetAddress",
+      usage = "Address where to send packets when acting as virtual client")
+  private String targetAddress;
 
   @Option(name = "-b", aliases = "--read-buffer-size-bytes", metaVar = "bytes count", usage =
       "Size (in bytes) of buffer used to receive packets from client. Default value: "
@@ -101,31 +107,21 @@ public class VirtualTcpServiceMain {
         + command + " -p 2324 -a 0.0.0.0 login-invalid-creds-wireshark.json\n"
         + command + " -p 2324 -a 0.0.0.0 login-invalid-creds.pcap\n"
         + command + " -p 2324 -a 0.0.0.0 -f \"port 23\" login-invalid-creds.pcap\n"
-        + command + " -d login-invalid-creds.yml -a 0.0.0.0 login-invalid-creds-wireshark.json\n");
+        + command + " -d login-invalid-creds.yml -a 0.0.0.0 login-invalid-creds-wireshark.json\n"
+        + command + " -t 127.0.0.1:2324 login-invalid-creds.yml");
   }
 
   private void run() throws IOException, InterruptedException {
     Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
     root.setLevel(superVerbose ? Level.TRACE : verbose ? Level.DEBUG : Level.INFO);
-
     Flow flow = loadFlow();
     if (dumpFile != null) {
       flow.saveYml(dumpFile);
     } else {
-      VirtualTcpService service = new VirtualTcpService();
-      service.setPort(port);
-      service.setSslEnabled(sslEnabled);
-      service.setReadBufferSize(readBufferSize);
-      service.setMaxConnections(maxConnectionCount);
-      service.setFlow(flow);
-      service.start();
-      try {
-        synchronized (this) {
-          this.wait();
-        }
-      } catch (InterruptedException e) {
-        service.stop(STOP_TIMEOUT_MILLIS);
-        Thread.currentThread().interrupt();
+      if (targetAddress != null) {
+        runVirtualClient(flow.reversed());
+      } else {
+        runVirtualService(flow);
       }
     }
   }
@@ -139,6 +135,45 @@ public class VirtualTcpServiceMain {
       }
     } else {
       return Flow.fromYml(configFile);
+    }
+  }
+
+  private void runVirtualClient(Flow flow) {
+    VirtualTcpClient client = new VirtualTcpClient();
+    client.setServerAddress(targetAddress);
+    client.setReadBufferSize(readBufferSize);
+    if (sslEnabled) {
+      try {
+        client.setSslContext(SSLContext.getDefault());
+      } catch (NoSuchAlgorithmException e) {
+        throw new RuntimeException(e);
+      }
+    }
+    client.setFlow(flow);
+    client.run();
+  }
+
+  private void runVirtualService(Flow flow) throws IOException, InterruptedException {
+    VirtualTcpService service = new VirtualTcpService();
+    service.setPort(port);
+    try {
+      service.setSslContext(SSLContext.getDefault());
+    } catch (NoSuchAlgorithmException e) {
+      throw new RuntimeException(e);
+    }
+    service.setReadBufferSize(readBufferSize);
+    service.setMaxConnections(maxConnectionCount);
+    service.setFlow(flow);
+    service.start();
+    try {
+      while (true) {
+        synchronized (this) {
+          this.wait();
+        }
+      }
+    } catch (InterruptedException e) {
+      service.stop(STOP_TIMEOUT_MILLIS);
+      Thread.currentThread().interrupt();
     }
   }
 

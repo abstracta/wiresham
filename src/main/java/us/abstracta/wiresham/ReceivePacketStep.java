@@ -6,26 +6,26 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A step in a flow which waits for a client packet.
+ * A step in a flow which waits to receive a packet.
  */
-public class ClientPacketStep extends PacketStep {
+public class ReceivePacketStep extends PacketStep {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ClientPacketStep.class);
+  private static final Logger LOG = LoggerFactory.getLogger(ReceivePacketStep.class);
 
-  public ClientPacketStep() {
+  public ReceivePacketStep() {
   }
 
-  public ClientPacketStep(String hexDump) {
+  public ReceivePacketStep(String hexDump) {
     super(hexDump);
   }
 
   @Override
-  public void process(ClientConnection clientConnection) throws IOException {
+  public void process(ConnectionFlowDriver connectionDriver) throws IOException {
     ByteBuffer dataBuffer = ByteBuffer.wrap(data.getBytes());
     LOG.debug("Waiting for {}", data);
     boolean receivedExpected = false;
     while (!receivedExpected) {
-      ByteBuffer readBuffer = clientConnection.read();
+      ByteBuffer readBuffer = connectionDriver.read();
       int foundPos = findDataInBuffer(dataBuffer, readBuffer);
       if (foundPos != -1) {
         if (foundPos != 0 && LOG.isTraceEnabled()) {

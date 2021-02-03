@@ -3,14 +3,15 @@
 </p>
 <br/>
 
-Simple TCP service mocking tool for replaying [tcpdump](http://www.tcpdump.org/) or [Wireshark](https://www.wireshark.org/) captured service traffic.
+Simple TCP mocking tool for replaying [tcpdump](http://www.tcpdump.org/) or [Wireshark](https://www.wireshark.org/) captured service or client traffic.
 
 This project is inspired in other tools like [WireMock](http://wiremock.org/), [mountebank](http://www.mbtest.org/) and [MockTCPServer](https://github.com/CloudRacer/MockTCPServer), but provides following features that are partially supported by listed tools:
   * TCP mocking support, with async messages sent (i.e: allows sending welcome messages which are not supported by mountebank).
   * Load mocking specification from tcpdump `.pcap` or Wireshark `.json` dump files and provides a reduced `.yaml` format for easy versioning.
   * Allows to easily run the mock embedded in Java projects for easy testing
+  * Allows both mocking servers and clients.
 
-Take into consideration that this tool is very simple, and only replays TCP traffic that has previously been recorded, so if user interacts with the tool in unexpected ways, then the service will not answer until next expected packet is received. For more complex scenarios consider using one of previously mentioned tools.
+Take into consideration that this tool is very simple, and only replays TCP traffic that has previously been recorded, so if user (or server) interacts with the tool in unexpected ways, then the mock will not answer until next expected packet is received. For more complex scenarios consider using one of previously mentioned tools.
 
 ## Usage
 
@@ -21,7 +22,7 @@ This tool (as previously listed ones) is particularly useful to implement integr
 The general use case for the tool takes following steps:
   1. User captures traffic with tcpdump (with something like `tcpdump port 23 -w ~/traffic.pcap`) or Wireshark between a client application and a service.
   1. If traffic has been captured with Wireshark then store the captured traffic, filtering with proper condition for service port, in a `.json` file (File -> Export Packet Dissections -> As JSON...)
-  1. At this point user might follow two potential courses:
+  1. At this point user might follow three potential courses:
       1. Start Wiresham in standalone mode with stored `.pcap` or `.json` and connect to it with the client application to reproduce previously stored traffic. 
           
           E.g.: `java -jar wiresham-standalone.jar -p 2324 -a 0.0.0.0 wireshark-dump.json`
@@ -33,8 +34,13 @@ The general use case for the tool takes following steps:
           E.g.: `java -jar wiresham-standalone.jar -p 2324 -a 0.0.0.0 traffic.pcap`
           
           > Run `java -jar wiresham-standalone.jar -h` to get usage instructions and help.
+      1. Same as previous one but start Wiresham in standalong mode to emulate a client application (instead of a service application):
+    
+        E.g.: `java -jar wiresham-standalone.jar -t 0.0.0.0:23 -a 0.0.0.0 wireshark-dump.json`
+
+        > Note that the only difference with previous example is the use of `-t` to specify target server address instead of the `-p` option to specify the local port. 
           
-      1. Convert the tcpdump or Wireshark dump to a reduced `.yaml` file (an example file can be found in [simple.yaml](src/test/resources/simple.yaml)), optionally manually tune it (response times or binary packets), add it to the project repository and implement tests using [VirtualTcpService class](src/main/java/us/abstracta/wiresham/VirtualTcpService.java).
+      1. Convert the tcpdump or Wireshark dump to a reduced `.yaml` file (an example file can be found in [simple.yaml](src/test/resources/simple.yaml)), optionally manually tune it (response times or binary packets), add it to the project repository and implement tests using [VirtualTcpService class](src/main/java/us/abstracta/wiresham/VirtualTcpService.java) or [VirtualTcpClient class](src/main/java/us/abstracta/wiresham/VirtualTcpClient.java).
           
           To convert a script run something like `java -jar wiresham-standalone.jar -d reduced-dump.yml -a 0.0.0.0 wireshark-dump.json`.
           
@@ -50,7 +56,7 @@ The general use case for the tool takes following steps:
           
           > Check what is the latest version in [releases](https://github.com/abstracta/wiresham/releases)
           
-          > Check [VirtualTcpServiceTest](src/test/java/us/abstracta/wiresham/VirtualTcpServiceTest.java) for simple and raw examples on how to use VirtualTcpService class.
+          > Check [VirtualTcpServiceTest](src/test/java/us/abstracta/wiresham/VirtualTcpServiceTest.java) and [VirtualTcpClientTest](src/test/java/us/abstracta/wiresham/VirtualTcpClientTest.java) for simple and raw examples on how to use the classes.
           
 ## Build
 

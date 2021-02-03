@@ -8,6 +8,11 @@
     <module name="FileTabCharacter">
         <property name="eachLine" value="true"/>
     </module>
+    <module name="LineLength">
+        <property name="max" value="100"/>
+        <property name="ignorePattern"
+          value="^package.*|^import.*|a href|href|http://|https://|ftp://"/>
+    </module>
 
     <module name="TreeWalker">
 
@@ -100,12 +105,6 @@
         <module name="ParameterName"/>
         <module name="StaticVariableName"/>
         <module name="TypeName"/>
-
-        <module name="LineLength">
-            <property name="max" value="100"/>
-            <property name="ignorePattern"
-                      value="^package.*|^import.*|a href|href|http://|https://|ftp://"/>
-        </module>
 
         <module name="EmptyForInitializerPad"/>
         <module name="EmptyForIteratorPad"/>

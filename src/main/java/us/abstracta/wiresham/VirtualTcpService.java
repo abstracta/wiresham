@@ -2,17 +2,18 @@ package us.abstracta.wiresham;
 
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLServerSocketFactory;
+import javax.net.ssl.SSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This class allows to create a virtual service (a mock) from an actual service traffic dump.
+ * Allows to create a virtual service (a mock) from an actual service traffic dump.
  * <p>
  * This is useful for testing clients and interactions which depend on a not always available
  * environment, either due to cost, resiliency, or other potential concerns.
@@ -28,10 +29,11 @@ public class VirtualTcpService implements Runnable {
   private int port = DYNAMIC_PORT;
   private Flow flow;
   private boolean sslEnabled;
+  private SSLContext sslContext;
   private int readBufferSize = DEFAULT_READ_BUFFER_SIZE;
   private int maxConnections = DEFAULT_MAX_CONNECTION_COUNT;
   private boolean stopped = false;
-  private final ArrayList<ClientConnection> clientConnections = new ArrayList<>();
+  private final Set<ConnectionFlowDriver> connectionDrivers = new HashSet<>();
   private ExecutorService serverExecutorService;
   private ExecutorService clientExecutorService;
   private ServerSocket server;
@@ -47,7 +49,7 @@ public class VirtualTcpService implements Runnable {
   public void setFlow(Flow flow) {
     this.flow = flow;
     Optional<PacketStep> bigPacketStep = flow.getSteps().stream()
-        .filter(s -> s instanceof ClientPacketStep && s.data.getBytes().length > readBufferSize)
+        .filter(s -> s instanceof ReceivePacketStep && s.data.getBytes().length > readBufferSize)
         .findAny();
     if (bigPacketStep.isPresent()) {
       throw new IllegalArgumentException(String.format(
@@ -56,8 +58,17 @@ public class VirtualTcpService implements Runnable {
     }
   }
 
+  /**
+   * @deprecated use {@link #setSslContext(SSLContext)} instead, potentially using {@link
+   * SSLContext#getDefault} as parameter.
+   */
+  @Deprecated
   public void setSslEnabled(boolean sslEnabled) {
     this.sslEnabled = sslEnabled;
+  }
+
+  public void setSslContext(SSLContext sslContext) {
+    this.sslContext = sslContext;
   }
 
   public void setReadBufferSize(int readBufferSize) {
@@ -72,8 +83,8 @@ public class VirtualTcpService implements Runnable {
     stopped = false;
     serverExecutorService = Executors.newSingleThreadExecutor();
     clientExecutorService = Executors.newFixedThreadPool(maxConnections);
-    if (sslEnabled) {
-      server = SSLServerSocketFactory.getDefault().createServerSocket(port);
+    if (sslContext != null) {
+      server = sslContext.getServerSocketFactory().createServerSocket(port);
     } else {
       server = new ServerSocket(port);
     }
@@ -86,7 +97,7 @@ public class VirtualTcpService implements Runnable {
     LOG.info("Waiting for connections on {}", server.getLocalPort());
     while (!stopped) {
       try {
-        addClient(new ClientConnection(this, server.accept(), readBufferSize, flow));
+        addClient(new ConnectionFlowDriver(server.accept(), readBufferSize, flow));
       } catch (IOException e) {
         if (stopped) {
           LOG.trace("Received expected exception when server socket has been closed", e);
@@ -97,24 +108,27 @@ public class VirtualTcpService implements Runnable {
     }
   }
 
-  private synchronized void addClient(ClientConnection clientConnection) throws IOException {
+  private synchronized void addClient(ConnectionFlowDriver connectionDriver) throws IOException {
     if (stopped) {
-      clientConnection.close();
+      connectionDriver.close();
       return;
     }
-    clientConnections.add(clientConnection);
-    clientExecutorService.submit(clientConnection);
+    connectionDrivers.add(connectionDriver);
+    clientExecutorService.submit(() -> {
+      connectionDriver.run();
+      removeClient(connectionDriver);
+    });
   }
 
-  public synchronized void removeClient(ClientConnection clientConnection) {
-    clientConnections.remove(clientConnection);
+  private synchronized void removeClient(ConnectionFlowDriver connectionDriver) {
+    connectionDrivers.remove(connectionDriver);
   }
 
   public void stop(long timeoutMillis) throws IOException, InterruptedException {
     synchronized (this) {
       stopped = true;
       server.close();
-      clientConnections.forEach(c -> {
+      connectionDrivers.forEach(c -> {
         try {
           c.close();
         } catch (IOException e) {

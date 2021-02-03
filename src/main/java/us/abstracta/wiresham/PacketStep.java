@@ -10,7 +10,8 @@ public abstract class PacketStep {
 
   protected Packet data;
 
-  protected PacketStep() {}
+  protected PacketStep() {
+  }
 
   protected PacketStep(String data) {
     this.data = Packet.fromHexDump(data);
@@ -24,7 +25,7 @@ public abstract class PacketStep {
     this.data = Packet.fromHexDump(data);
   }
 
-  public abstract void process(ClientConnection clientConnection)
+  public abstract void process(ConnectionFlowDriver connectionDriver)
       throws IOException, InterruptedException;
 
   @Override

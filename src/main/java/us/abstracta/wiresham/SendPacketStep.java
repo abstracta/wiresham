@@ -5,17 +5,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A step in a flow which sends a packet to the client.
+ * A step in a flow which sends a packet.
  */
-public class ServerPacketStep extends PacketStep {
+public class SendPacketStep extends PacketStep {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ServerPacketStep.class);
+  private static final Logger LOG = LoggerFactory.getLogger(SendPacketStep.class);
 
   private long delayMillis;
 
-  public ServerPacketStep() {}
+  public SendPacketStep() {
+  }
 
-  public ServerPacketStep(String hexDump, long delayMillis) {
+  public SendPacketStep(String hexDump, long delayMillis) {
     super(hexDump);
     this.delayMillis = delayMillis;
   }
@@ -29,12 +30,13 @@ public class ServerPacketStep extends PacketStep {
   }
 
   @Override
-  public void process(ClientConnection clientConnection) throws IOException, InterruptedException {
+  public void process(ConnectionFlowDriver connectionDriver)
+      throws IOException, InterruptedException {
     LOG.debug("sending {} with {} millis delay", data, delayMillis);
     if (delayMillis > 0) {
       Thread.sleep(delayMillis);
     }
-    clientConnection.write(data.getBytes());
+    connectionDriver.write(data.getBytes());
   }
 
   @Override

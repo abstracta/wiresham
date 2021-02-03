@@ -10,20 +10,18 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 /**
- * A connection to a client driving the flow and communication with such client.
+ * Drives the flow of a connection according to a configured flow.
  */
-public class ClientConnection implements Runnable {
+public class ConnectionFlowDriver implements Runnable {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ClientConnection.class);
+  private static final Logger LOG = LoggerFactory.getLogger(ConnectionFlowDriver.class);
 
-  private final VirtualTcpService service;
   private final Socket socket;
   private final Queue<PacketStep> flowSteps;
   private final ByteBuffer readBuffer;
   private volatile boolean closed;
 
-  public ClientConnection(VirtualTcpService service, Socket socket, int readBufferSize, Flow flow) {
-    this.service = service;
+  public ConnectionFlowDriver(Socket socket, int readBufferSize, Flow flow) {
     this.socket = socket;
     this.flowSteps = new LinkedList<>(flow.getSteps());
     readBuffer = ByteBuffer.allocate(readBufferSize);
@@ -60,8 +58,6 @@ public class ClientConnection implements Runnable {
       } catch (IOException e) {
         LOG.error("Problem when releasing client connection socket", e);
       }
-      service.removeClient(this);
-
       MDC.clear();
     }
   }

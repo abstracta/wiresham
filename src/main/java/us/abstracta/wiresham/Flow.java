@@ -39,8 +39,8 @@ import org.yaml.snakeyaml.representer.Representer;
 public class Flow {
 
   private static final Map<String, Class<?>> YAML_TAGS = ImmutableMap.<String, Class<?>>builder()
-      .put("!server", ServerPacketStep.class)
-      .put("!client", ClientPacketStep.class)
+      .put("!server", SendPacketStep.class)
+      .put("!client", ReceivePacketStep.class)
       .build();
 
   private static final JsonPointer WIRESHARK_LAYERS_PATH = JsonPointer.valueOf("/_source/layers");
@@ -84,8 +84,8 @@ public class Flow {
           long timeDeltaMillis =
               Long.parseLong(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
                   / 1000000;
-          return isServerAddress(sourceIp, sourcePort, serverAddress) ? new ServerPacketStep(
-              hexDump, timeDeltaMillis) : new ClientPacketStep(hexDump);
+          return isServerAddress(sourceIp, sourcePort, serverAddress) ? new SendPacketStep(
+              hexDump, timeDeltaMillis) : new ReceivePacketStep(hexDump);
         })
         .collect(Collectors.toList()));
   }
@@ -119,8 +119,8 @@ public class Flow {
         long timeMillis = pcap.getTimestamp().getTime();
         long timeDeltaMillis = lastTimeMillis > 0 ? timeMillis - lastTimeMillis : 0;
         lastTimeMillis = timeMillis;
-        steps.add(serverAddress.equals(sourceIp) ? new ServerPacketStep(hexDump, timeDeltaMillis)
-            : new ClientPacketStep(hexDump));
+        steps.add(serverAddress.equals(sourceIp) ? new SendPacketStep(hexDump, timeDeltaMillis)
+            : new ReceivePacketStep(hexDump));
       }
     } catch (EOFException e) {
       //just ignore if we reached end of file.
@@ -169,6 +169,13 @@ public class Flow {
 
     YAML_TAGS.forEach((tag, clazz) -> representer.addClassTag(clazz, new Tag(tag)));
     return representer;
+  }
+
+  public Flow reversed() {
+    return new Flow(steps.stream()
+        .map(s -> s instanceof SendPacketStep ? new ReceivePacketStep(s.data.toString())
+            : new SendPacketStep(s.data.toString(), 0))
+        .collect(Collectors.toList()));
   }
 
 }
