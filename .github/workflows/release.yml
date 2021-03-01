@@ -15,7 +15,7 @@ jobs:
         run: mvn --batch-mode --no-transfer-progress versions:set -DnewVersion=${GITHUB_REF#refs/tags/v} --settings .github/settings.xml
       - name: package release
         run: mvn --batch-mode --no-transfer-progress clean package --settings .github/settings.xml
-      - name: Upload jmeter-java-dsl.jar to release
+      - name: Upload wiresham jars to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
