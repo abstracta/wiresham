@@ -5,6 +5,10 @@
 
 Simple TCP mocking tool for replaying [tcpdump](http://www.tcpdump.org/) or [Wireshark](https://www.wireshark.org/) captured service or client traffic.
 
+If you like this project, **please give it a star :star:!** This helps the project be more visible, gain relevance and encourages us to invest more effort in new features.
+
+## Description
+
 This project is inspired in other tools like [WireMock](http://wiremock.org/), [mountebank](http://www.mbtest.org/) and [MockTCPServer](https://github.com/CloudRacer/MockTCPServer), but provides following features that are partially supported by listed tools:
   * TCP mocking support, with async messages sent (i.e: allows sending welcome messages which are not supported by mountebank).
   * Load mocking specification from tcpdump `.pcap` or Wireshark `.json` dump files and provides a reduced `.yaml` format for easy versioning.
