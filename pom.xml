@@ -6,7 +6,7 @@
   <groupId>us.abstracta</groupId>
   <artifactId>wiresham</artifactId>
   <!-- This version has no relation to the released version since the release version is extracted
-  from git tag by Travis -->
+  from git tag by github actions workflow -->
   <version>0.1-SNAPSHOT</version>
 
   <name>${project.artifactId}</name>
