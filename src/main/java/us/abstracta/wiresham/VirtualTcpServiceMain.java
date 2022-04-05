@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
  */
 public class VirtualTcpServiceMain {
 
-  private static final long STOP_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(10);
+  public static final long STOP_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(10);
 
   @Option(name = "-p", aliases = "--port", metaVar = "port",
       usage = "Port to receive connections to the virtual service")
@@ -73,10 +73,10 @@ public class VirtualTcpServiceMain {
   @Option(name = "-h", aliases = "--help", usage = "Show usage information", help = true)
   private boolean displayHelp;
 
-  @Option(name ="-r", aliases = "--auto-reload", usage = "Auto reload service when provided " 
+  @Option(name = "-r", aliases = "--auto-reload", usage = "Auto reload service when provided "
       + "config file has been modified. Default: true")
   private boolean autoReload;
-  
+
   @Argument(metaVar = "config file", required = true,
       usage = "Configuration file from where to read packets information")
   private File configFile;

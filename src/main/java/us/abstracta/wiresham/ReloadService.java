@@ -26,7 +26,6 @@ public class ReloadService implements Runnable {
   private final File configFile;
   private boolean registered;
 
-
   public ReloadService(VirtualTcpService service, File configFile) {
     this.service = service;
     this.configFile = configFile;
@@ -39,11 +38,11 @@ public class ReloadService implements Runnable {
     try {
       watchService = FileSystems.getDefault().newWatchService();
       watchServicePath.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY);
+      registered = true;
     } catch (IOException e) {
       LOG.error("Error while initializing Reload Service", e);
       return;
     }
-    registered = true;
     while (true) {
       try {
         WatchKey take = watchService.take();
@@ -59,17 +58,17 @@ public class ReloadService implements Runnable {
             Path p = (Path) pollEvent.context();
             if (Paths.get(watchServicePath.toString(), configFile.getName())
                 .equals(Paths.get(watchServicePath.toString(), p.toString()))) {
-              LOG.info("Opened file was modified, flow restarted with new changes");
-              service.stop(10000);
+              LOG.info("File was modified, flow will be restarted with new changes");
+              service.stop(VirtualTcpServiceMain.STOP_TIMEOUT_MILLIS);
               service.start();
             }
           }
         }
         take.reset();
       } catch (InterruptedException e) {
-        LOG.error("Error while waiting for WatchService event", e);
+        LOG.error("Error while waiting for WatchService event key", e);
       } catch (IOException e) {
-        LOG.error("Error when restarting service using Auto Reload");
+        LOG.error("Error when restarting service using Auto Reload", e);
       }
     }
   }
@@ -93,6 +92,10 @@ public class ReloadService implements Runnable {
     return Paths.get(configFile.getPath()).toAbsolutePath().getParent();
   }
 
+  /*
+  registration of watch service is sync.
+  For test proposes we need to know when the registration is success.
+   */
   @VisibleForTesting
   public boolean isReloadServiceActive() {
     return registered;
