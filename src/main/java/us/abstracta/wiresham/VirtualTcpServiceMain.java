@@ -73,6 +73,10 @@ public class VirtualTcpServiceMain {
   @Option(name = "-h", aliases = "--help", usage = "Show usage information", help = true)
   private boolean displayHelp;
 
+  @Option(name ="-r", aliases = "--auto-reload", usage = "Auto reload service when provided " 
+      + "config file has been modified. Default: true")
+  private boolean autoReload;
+  
   @Argument(metaVar = "config file", required = true,
       usage = "Configuration file from where to read packets information")
   private File configFile;
@@ -155,6 +159,7 @@ public class VirtualTcpServiceMain {
 
   private void runVirtualService(Flow flow) throws IOException, InterruptedException {
     VirtualTcpService service = new VirtualTcpService();
+    ReloadService reloadService = new ReloadService(service, configFile);
     service.setPort(port);
     if (sslEnabled) {
       try {
@@ -166,6 +171,7 @@ public class VirtualTcpServiceMain {
     service.setReadBufferSize(readBufferSize);
     service.setMaxConnections(maxConnectionCount);
     service.setFlow(flow);
+    reloadService.startIfRequested(!autoReload);
     service.start();
     try {
       while (true) {
@@ -175,6 +181,7 @@ public class VirtualTcpServiceMain {
       }
     } catch (InterruptedException e) {
       service.stop(STOP_TIMEOUT_MILLIS);
+      reloadService.stop();
       Thread.currentThread().interrupt();
     }
   }
