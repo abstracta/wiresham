@@ -159,7 +159,6 @@ public class VirtualTcpServiceMain {
 
   private void runVirtualService(Flow flow) throws IOException, InterruptedException {
     VirtualTcpService service = new VirtualTcpService();
-    ReloadService reloadService = new ReloadService(service, configFile);
     service.setPort(port);
     if (sslEnabled) {
       try {
@@ -171,7 +170,11 @@ public class VirtualTcpServiceMain {
     service.setReadBufferSize(readBufferSize);
     service.setMaxConnections(maxConnectionCount);
     service.setFlow(flow);
-    reloadService.startIfRequested(!autoReload);
+    ReloadService reloadService = null;
+    if (!autoReload) {
+      reloadService = new ReloadService(service, configFile, serverAddress, pcapFilter);
+      reloadService.start();
+    }
     service.start();
     try {
       while (true) {
@@ -181,7 +184,9 @@ public class VirtualTcpServiceMain {
       }
     } catch (InterruptedException e) {
       service.stop(STOP_TIMEOUT_MILLIS);
-      reloadService.stop();
+      if (reloadService != null) {
+        reloadService.stop();
+      }
       Thread.currentThread().interrupt();
     }
   }
