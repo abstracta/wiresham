@@ -1,6 +1,7 @@
 package us.abstracta.wiresham;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
@@ -21,6 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.assertj.core.util.Files;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +45,7 @@ public class ReloadServiceTest {
     MockitoAnnotations.initMocks(this);
     registerWatchServiceLock = new CountDownLatch(1);
     setupConfigFile();
-    this.reloadService = new ReloadService(service, configFile, null, null);
+    this.reloadService = new ReloadService(service, configFile, buildFlowProvider());
   }
 
   private void setupConfigFile() throws IOException {
@@ -56,6 +58,17 @@ public class ReloadServiceTest {
   private void writeInConfigFile(List<String> lines) throws IOException {
     java.nio.file.Files.write(configFile.originalPath(), lines,
         StandardCharsets.UTF_8);
+  }
+
+  private Supplier<Flow> buildFlowProvider() {
+    return () -> {
+      try {
+        return SimpleFlow.getFlow();
+      } catch (FileNotFoundException e) {
+        fail(e.getMessage());
+        return null;
+      }
+    };
   }
 
   @Test
