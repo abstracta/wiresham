@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import javax.net.ssl.SSLContext;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineException;
@@ -22,7 +23,7 @@ import org.slf4j.LoggerFactory;
  */
 public class VirtualTcpServiceMain {
 
-  private static final long STOP_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(10);
+  public static final long STOP_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(10);
 
   @Option(name = "-p", aliases = "--port", metaVar = "port",
       usage = "Port to receive connections to the virtual service")
@@ -73,13 +74,33 @@ public class VirtualTcpServiceMain {
   @Option(name = "-h", aliases = "--help", usage = "Show usage information", help = true)
   private boolean displayHelp;
 
+  @Option(name = "-r", aliases = "--auto-reload", usage =
+      "When enabled, will listen for changes in dump file, when the file has changes all new "
+          + "connections from now on, will use the new version of the dump. "
+          + "Established connections will persist using previous dump and won't suffer any "
+          + "interruption. Default: enabled")
+  private boolean autoReload;
+
   @Argument(metaVar = "config file", required = true,
       usage = "Configuration file from where to read packets information")
   private File configFile;
 
-  private boolean isDisplayHelp() {
-    return displayHelp;
-  }
+  private final Supplier<Flow> loadFlowProvider = () -> {
+    try {
+      if (serverAddress != null) {
+        if (configFile.getName().toLowerCase().endsWith(".json")) {
+          return Flow.fromWiresharkJsonDump(configFile, serverAddress);
+        } else {
+          return Flow.fromPcap(configFile, serverAddress, pcapFilter);
+        }
+      } else {
+        return Flow.fromYml(configFile);
+      }
+    } catch (IOException e) {
+      System.err.println(e.getMessage());
+      return null;
+    }
+  };
 
   public static void main(String[] args) throws IOException, InterruptedException {
     VirtualTcpServiceMain main = new VirtualTcpServiceMain();
@@ -95,6 +116,10 @@ public class VirtualTcpServiceMain {
       System.err.println(e.getMessage());
       printHelp(parser, System.err);
     }
+  }
+
+  private boolean isDisplayHelp() {
+    return displayHelp;
   }
 
   private static void printHelp(CmdLineParser parser, PrintStream printStream) {
@@ -114,7 +139,7 @@ public class VirtualTcpServiceMain {
   private void run() throws IOException, InterruptedException {
     Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
     root.setLevel(superVerbose ? Level.TRACE : verbose ? Level.DEBUG : Level.INFO);
-    Flow flow = loadFlow();
+    Flow flow = loadFlowProvider.get();
     if (dumpFile != null) {
       flow.saveYml(dumpFile);
     } else {
@@ -123,18 +148,6 @@ public class VirtualTcpServiceMain {
       } else {
         runVirtualService(flow);
       }
-    }
-  }
-
-  private Flow loadFlow() throws IOException {
-    if (serverAddress != null) {
-      if (configFile.getName().toLowerCase().endsWith(".json")) {
-        return Flow.fromWiresharkJsonDump(configFile, serverAddress);
-      } else {
-        return Flow.fromPcap(configFile, serverAddress, pcapFilter);
-      }
-    } else {
-      return Flow.fromYml(configFile);
     }
   }
 
@@ -166,6 +179,11 @@ public class VirtualTcpServiceMain {
     service.setReadBufferSize(readBufferSize);
     service.setMaxConnections(maxConnectionCount);
     service.setFlow(flow);
+    ReloadService reloadService = null;
+    if (!autoReload) {
+      reloadService = new ReloadService(service, configFile, loadFlowProvider);
+      reloadService.start();
+    }
     service.start();
     try {
       while (true) {
@@ -175,6 +193,9 @@ public class VirtualTcpServiceMain {
       }
     } catch (InterruptedException e) {
       service.stop(STOP_TIMEOUT_MILLIS);
+      if (reloadService != null) {
+        reloadService.stop();
+      }
       Thread.currentThread().interrupt();
     }
   }
