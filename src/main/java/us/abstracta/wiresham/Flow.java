@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -178,4 +179,20 @@ public class Flow {
         .collect(Collectors.toList()));
   }
 
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    Flow flow = (Flow) o;
+    return Objects.equals(steps, flow.steps);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(steps);
+  }
 }
