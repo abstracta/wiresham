@@ -19,6 +19,10 @@ public class ReceivePacketStep extends PacketStep {
     super(hexDump);
   }
 
+  public ReceivePacketStep(String hexDump, int port) {
+    super(hexDump, port);
+  }
+
   @Override
   public void process(ConnectionFlowDriver connectionDriver) throws IOException {
     ByteBuffer dataBuffer = ByteBuffer.wrap(data.getBytes());

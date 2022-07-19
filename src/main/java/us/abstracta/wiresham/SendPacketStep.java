@@ -13,7 +13,7 @@ public class SendPacketStep extends PacketStep {
   private static final Logger LOG = LoggerFactory.getLogger(SendPacketStep.class);
 
   private long delayMillis;
-  private int port = 0;
+
   public SendPacketStep() {
   }
 
@@ -21,20 +21,13 @@ public class SendPacketStep extends PacketStep {
     super(hexDump);
     this.delayMillis = delayMillis;
   }
+
   public SendPacketStep(String hexDump, long delayMillis, int port) {
-    super(hexDump);
+    super(hexDump, port);
     this.delayMillis = delayMillis;
     this.port = port;
   }
 
-  //Wrapping port in order to be nullable when not set
-  public Integer getPort() {
-    return port == 0 ? null : port;
-  }
-
-  public void setPort(int port) {
-    this.port = port;
-  }
   public long getDelayMillis() {
     return delayMillis;
   }
@@ -57,6 +50,7 @@ public class SendPacketStep extends PacketStep {
   public String toString() {
     return String.format("server: %s, delayMillis: %d, port: %d", data, delayMillis, port);
   }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {

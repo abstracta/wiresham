@@ -9,6 +9,7 @@ import java.util.Objects;
 public abstract class PacketStep {
 
   protected Packet data;
+  protected int port;
 
   protected PacketStep() {
   }
@@ -17,12 +18,29 @@ public abstract class PacketStep {
     this.data = Packet.fromHexDump(data);
   }
 
+  protected PacketStep(String data, int port) {
+    this(data);
+    this.port = port;
+  }
+
   public String getData() {
     return data.toString();
   }
 
   public void setData(String data) {
     this.data = Packet.fromHexDump(data);
+  }
+
+  public Integer getPort() {
+    return port == 0 ? null : port;
+  }
+  
+  public int getPortInt() {
+    return port;
+  }
+
+  public void setPort(int port) {
+    this.port = port;
   }
 
   public abstract void process(ConnectionFlowDriver connectionDriver)
