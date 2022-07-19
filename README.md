@@ -65,7 +65,7 @@ The general use case for the tool takes following steps:
 ## Tips
 
 #### How to filter by port while using packet dissections
-Since packet dissections is in JSON schema we can take advantage of using [**jq**](https://jqplay.org/).
+Since packet dissections are in JSON schema we can take advantage of using [**jq**](https://jqplay.org/).
 
 The filter to use can be applied using: 
 - Using [jq playground](https://jqplay.org/) (online version of jq). [Here](https://jqplay.org/s/qh8LMDecqyR) there is an example.
@@ -74,7 +74,7 @@ The filter to use can be applied using:
 Filter: `. |= map(select((.["_source"].layers.tcp["tcp.srcport"]  == "PORT_NUMBER") or (.["_source"].layers.tcp["tcp.dstport"]  == "PORT_NUMBER")))`
 > PORT_NUMBER needs to be replaced by the port we want to filter.
 
-In short this filter is going to exclude all packets that don't interact with the PORT_NUMBER we want.
+In short, this filter is going to exclude all packets that don't interact with the PORT_NUMBER we want.
 
 ## Build
 
