@@ -6,7 +6,7 @@ import java.util.concurrent.ExecutionException;
 
 public interface FlowConnectionProvider {
   
-  FlowConnection get(int port) throws ExecutionException, InterruptedException;
+  FlowConnection get(int port) throws ExecutionException, InterruptedException, IOException;
 
   void init(List<Integer> ports, FlowConnection flowConnection);
 
