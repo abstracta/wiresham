@@ -1,10 +1,9 @@
 package us.abstracta.wiresham;
 
 import java.io.IOException;
-import java.net.Socket;
-import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.concurrent.ExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -16,26 +15,32 @@ public class ConnectionFlowDriver implements Runnable {
 
   private static final Logger LOG = LoggerFactory.getLogger(ConnectionFlowDriver.class);
 
-  private final Socket socket;
+  private final FlowConnectionProvider connectionProvider;
   private final Queue<PacketStep> flowSteps;
-  private final ByteBuffer readBuffer;
-  private volatile boolean closed;
+  private final int portArgument;
 
-  public ConnectionFlowDriver(Socket socket, int readBufferSize, Flow flow) {
-    this.socket = socket;
+  public ConnectionFlowDriver(FlowConnectionProvider connectionProvider,
+      Flow flow, int portArgument) {
+    this.portArgument = portArgument;
     this.flowSteps = new LinkedList<>(flow.getSteps());
-    readBuffer = ByteBuffer.allocate(readBufferSize);
-    readBuffer.limit(0);
+    this.connectionProvider = connectionProvider;
   }
 
   @Override
   public void run() {
-    MDC.put("connectionId", getId());
     try {
-      LOG.info("starting new flow ...");
+      PacketStep first = flowSteps.peek();
+      int previousPort = (first == null || first.getPort() == null)
+          ? portArgument : first.getPort();
+      LOG.info("starting new flow on {}", previousPort);
       while (!flowSteps.isEmpty()) {
         PacketStep step = flowSteps.poll();
-        step.process(this);
+        if (step.getPort() != null && step.getPort() != previousPort) {
+          LOG.info("changing to connections on port {}", step.getPort());
+          previousPort = step.getPort();
+        }
+        FlowConnection flowConnection = connectionProvider.get(previousPort);
+        step.process(flowConnection);
       }
       LOG.info("flow completed!");
     } catch (ConnectionClosedException e) {
@@ -44,7 +49,7 @@ public class ConnectionFlowDriver implements Runnable {
         LOG.debug("Discarding client packet {}", e.getDiscardedPacket(), e);
       }
     } catch (IOException e) {
-      if (closed) {
+      if (e.getMessage().contains("Socket is closed")) {
         LOG.trace("Received expected exception when server socket has been closed", e);
       } else {
         LOG.error("Problem while processing requests from client. Closing connection.", e);
@@ -52,48 +57,23 @@ public class ConnectionFlowDriver implements Runnable {
     } catch (InterruptedException e) {
       LOG.trace("The thread has been interrupted", e);
       Thread.currentThread().interrupt();
+    } catch (ExecutionException e) {
+      LOG.error("Problem while waiting for socket to be created", e);
     } finally {
       try {
-        close();
+        closeFlowConnections();
       } catch (IOException e) {
-        LOG.error("Problem when releasing client connection socket", e);
+        LOG.error("Problem while releasing sockets", e);
       }
       MDC.clear();
     }
   }
 
-  public String getId() {
-    return socket.getInetAddress().toString() + ":" + socket.getPort();
+  public FlowConnectionProvider getConnectionProvider() {
+    return connectionProvider;
   }
 
-  public void write(byte[] data) throws IOException {
-    socket.getOutputStream().write(data);
+  public void closeFlowConnections() throws IOException {
+    connectionProvider.closeConnections();
   }
-
-  public ByteBuffer read() throws IOException {
-    if (!readBuffer.hasRemaining()) {
-      LOG.trace("reading from socket");
-      int count = socket.getInputStream().read(readBuffer.array(), readBuffer.position(),
-          readBuffer.capacity() - readBuffer.position());
-      if (count == -1) {
-        throw new ConnectionClosedException(
-            Packet.fromBytes(readBuffer.array(), 0, readBuffer.position()));
-      }
-      readBuffer.limit(readBuffer.position() + count);
-      if (LOG.isTraceEnabled()) {
-        LOG.trace("read from socket: {}",
-            Packet.fromBytes(readBuffer.array(), readBuffer.position(), count));
-      }
-    }
-    return readBuffer;
-  }
-
-  public void close() throws IOException {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    socket.close();
-  }
-
 }

@@ -2,12 +2,19 @@ package us.abstracta.wiresham;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,15 +25,16 @@ import org.slf4j.LoggerFactory;
  * This is useful for testing clients and interactions which depend on a not always available
  * environment, either due to cost, resiliency, or other potential concerns.
  */
-public class VirtualTcpService implements Runnable {
+public class VirtualTcpService {
 
   public static final int DEFAULT_READ_BUFFER_SIZE = 2048;
   public static final int DEFAULT_MAX_CONNECTION_COUNT = 1;
   public static final int DYNAMIC_PORT = 0;
+  public static final int CLOSE_SOCKETS_TIMEOUT_MILLIS = 10000;
 
   private static final Logger LOG = LoggerFactory.getLogger(VirtualTcpService.class);
 
-  private int port = DYNAMIC_PORT;
+  private int portArgument = DYNAMIC_PORT;
   private Flow flow;
   private boolean sslEnabled;
   private SSLContext sslContext;
@@ -34,16 +42,11 @@ public class VirtualTcpService implements Runnable {
   private int maxConnections = DEFAULT_MAX_CONNECTION_COUNT;
   private boolean stopped = false;
   private final Set<ConnectionFlowDriver> connectionDrivers = new HashSet<>();
-  private ExecutorService serverExecutorService;
   private ExecutorService clientExecutorService;
-  private ServerSocket server;
+  private ExecutorService portExecutorService;
 
-  public int getPort() {
-    return server.getLocalPort();
-  }
-
-  public void setPort(int port) {
-    this.port = port;
+  public void setPortArgument(int portArgument) {
+    this.portArgument = portArgument;
   }
 
   public void setFlow(Flow flow) {
@@ -81,36 +84,61 @@ public class VirtualTcpService implements Runnable {
 
   public void start() throws IOException {
     stopped = false;
-    serverExecutorService = Executors.newSingleThreadExecutor();
+    int portCount = flow.getPortCount();
+    portExecutorService = Executors.newFixedThreadPool(portCount == 0 ? 1 : portCount);
     clientExecutorService = Executors.newFixedThreadPool(maxConnections);
-    if (sslContext != null) {
-      server = sslContext.getServerSocketFactory().createServerSocket(port);
-    } else {
-      server = new ServerSocket(port);
-    }
-    serverExecutorService.submit(this);
+    runService();
   }
 
-  @Override
-  public void run() {
-    LOG.debug("Starting server on {} with flow: {}", server.getLocalPort(), flow);
-    LOG.info("Waiting for connections on {}", server.getLocalPort());
-    while (!stopped) {
-      try {
-        addClient(new ConnectionFlowDriver(server.accept(), readBufferSize, flow));
-      } catch (IOException e) {
-        if (stopped) {
-          LOG.trace("Received expected exception when server socket has been closed", e);
-        } else {
-          LOG.error("Problem waiting for client connection. Keep waiting.", e);
+  public void runService() throws IOException {
+    List<Integer> ports = flow.getPorts().isEmpty()
+        ? Collections.singletonList(portArgument) : flow.getPorts();
+    for (Integer port : ports) {
+      ServerSocket serverSocket = buildSocket(port);
+      LOG.info("Waiting for connections on {}", port);
+      portExecutorService.execute(() -> {
+        while (!stopped) {
+          try {
+            assignFlowConnectionToConnectionDriver(port,
+                new FlowConnection(serverSocket.accept(), readBufferSize));
+          } catch (IOException e) {
+            handleSocketIOException(e);
+          }
         }
-      }
+      });
     }
   }
 
-  private synchronized void addClient(ConnectionFlowDriver connectionDriver) throws IOException {
+  private ServerSocket buildSocket(int port) throws IOException {
+    if (sslContext != null) {
+      return sslContext.getServerSocketFactory().createServerSocket(port);
+    }
+    return new ServerSocket(port);
+  }
+
+  private synchronized void assignFlowConnectionToConnectionDriver(Integer port,
+      FlowConnection flowConnection) {
+    Optional<FlowConnectionProvider> first = connectionDrivers.stream()
+        .map(ConnectionFlowDriver::getConnectionProvider)
+        .filter(f -> f.requiresFlowConnection(port))
+        .findFirst();
+
+    if (first.isPresent()) {
+      first.get().assignFlowConnection(port, flowConnection);
+      return;
+    }
+    FlowConnectionProvider connectionProvider = buildFlowConnectionProvider();
+    connectionProvider.init(flow.getPorts(), flowConnection);
+    addClient(new ConnectionFlowDriver(connectionProvider, flow, portArgument));
+  }
+
+  private synchronized void addClient(ConnectionFlowDriver connectionDriver) {
     if (stopped) {
-      connectionDriver.close();
+      try {
+        connectionDriver.closeFlowConnections();
+      } catch (IOException e) {
+        LOG.error("Error occurred while closing socket connections");
+      }
       return;
     }
     connectionDrivers.add(connectionDriver);
@@ -124,24 +152,72 @@ public class VirtualTcpService implements Runnable {
     connectionDrivers.remove(connectionDriver);
   }
 
-  public void stop(long timeoutMillis) throws IOException, InterruptedException {
+  private void handleSocketIOException(IOException e) {
+    if (stopped) {
+      LOG.trace("Received expected exception when server socket has been closed", e);
+    } else {
+      LOG.error("Problem waiting for client connection. Keep waiting.", e);
+    }
+  }
+
+  public void stop(long timeoutMillis) throws InterruptedException {
     synchronized (this) {
       stopped = true;
-      server.close();
       connectionDrivers.forEach(c -> {
         try {
-          c.close();
+          c.closeFlowConnections();
         } catch (IOException e) {
-          LOG.error("Problem closing connection {}", c.getId(), e);
+          LOG.error("Problem closing connection ", e);
         }
       });
     }
     clientExecutorService.shutdown();
-    clientExecutorService.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS);
-    serverExecutorService.shutdownNow();
-    if (!serverExecutorService.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS)) {
-      LOG.warn("Server thread didn't stop after {} millis", timeoutMillis);
+    if (!clientExecutorService.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS)) {
+      clientExecutorService.shutdownNow();
     }
   }
 
+  private FlowConnectionProvider buildFlowConnectionProvider() {
+    return new FlowConnectionProvider() {
+      public final Map<Integer, CompletableFuture<FlowConnection>> map = new ConcurrentHashMap<>();
+
+      @Override
+      public FlowConnection get(int port) throws ExecutionException, InterruptedException {
+        return map.get(port).get();
+      }
+
+      @Override
+      public void init(List<Integer> ports, FlowConnection flowConnection) {
+        map.clear();
+        for (Integer port : ports) {
+          map.put(port, new CompletableFuture<>());
+        }
+        CompletableFuture<FlowConnection> completedFuture = new CompletableFuture<>();
+        completedFuture.complete(flowConnection);
+        map.put(flowConnection.getPort(), completedFuture);
+      }
+
+      @Override
+      public void assignFlowConnection(int port, FlowConnection flowConnection) {
+        map.get(port).complete(flowConnection);
+      }
+
+      @Override
+      public boolean requiresFlowConnection(int port) {
+        return !map.get(port).isDone();
+      }
+
+      @Override
+      public void closeConnections() throws IOException {
+        for (CompletableFuture<FlowConnection> value : map.values()) {
+          try {
+            value.get(CLOSE_SOCKETS_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS).close();
+          } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            //Do nothing since there might be a socket that was not used therefore, connection was 
+            //never established in order to properly retrieve socket from completable future
+          }
+        }
+      }
+    };
+  }
 }

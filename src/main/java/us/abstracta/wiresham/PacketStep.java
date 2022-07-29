@@ -43,7 +43,7 @@ public abstract class PacketStep {
     this.port = port;
   }
 
-  public abstract void process(ConnectionFlowDriver connectionDriver)
+  public abstract void process(FlowConnection flowConnection)
       throws IOException, InterruptedException;
 
   @Override

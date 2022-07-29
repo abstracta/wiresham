@@ -24,12 +24,12 @@ public class ReceivePacketStep extends PacketStep {
   }
 
   @Override
-  public void process(ConnectionFlowDriver connectionDriver) throws IOException {
+  public void process(FlowConnection flowConnection) throws IOException {
     ByteBuffer dataBuffer = ByteBuffer.wrap(data.getBytes());
     LOG.debug("Waiting for {}", data);
     boolean receivedExpected = false;
     while (!receivedExpected) {
-      ByteBuffer readBuffer = connectionDriver.read();
+      ByteBuffer readBuffer = flowConnection.read();
       int foundPos = findDataInBuffer(dataBuffer, readBuffer);
       if (foundPos != -1) {
         if (foundPos != 0 && LOG.isTraceEnabled()) {

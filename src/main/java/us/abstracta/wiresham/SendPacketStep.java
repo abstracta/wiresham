@@ -37,7 +37,7 @@ public class SendPacketStep extends PacketStep {
   }
 
   @Override
-  public void process(ConnectionFlowDriver connectionDriver)
+  public void process(FlowConnection connectionDriver)
       throws IOException, InterruptedException {
     LOG.debug("sending {} with {} millis delay", data, delayMillis);
     if (delayMillis > 0) {
