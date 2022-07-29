@@ -91,9 +91,7 @@ public class VirtualTcpService {
   }
 
   public void runService() throws IOException {
-    List<Integer> ports = flow.getPorts().isEmpty()
-        ? Collections.singletonList(portArgument) : flow.getPorts();
-    for (Integer port : ports) {
+    for (Integer port : getPorts()) {
       ServerSocket serverSocket = buildSocket(port);
       LOG.info("Waiting for connections on {}", port);
       portExecutorService.execute(() -> {
@@ -107,6 +105,11 @@ public class VirtualTcpService {
         }
       });
     }
+  }
+
+  private List<Integer> getPorts() {
+    return flow.getPorts().isEmpty()
+        ? Collections.singletonList(portArgument) : flow.getPorts();
   }
 
   private ServerSocket buildSocket(int port) throws IOException {

@@ -59,10 +59,6 @@ public class VirtualTcpClient {
   }
 
   public void run() {
-    start();
-  }
-
-  public void start() {
     executorService = Executors.newSingleThreadExecutor();
     connection = new ConnectionFlowDriver(buildFlowConnectionProvider(), flow, port);
     executorService.submit(connection);

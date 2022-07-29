@@ -34,10 +34,6 @@ public abstract class PacketStep {
   public Integer getPort() {
     return port == 0 ? null : port;
   }
-  
-  public int getPortInt() {
-    return port;
-  }
 
   public void setPort(int port) {
     this.port = port;
