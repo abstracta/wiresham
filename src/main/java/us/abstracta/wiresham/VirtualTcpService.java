@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -87,10 +88,10 @@ public class VirtualTcpService {
     int portCount = flow.getPortCount();
     portExecutorService = Executors.newFixedThreadPool(portCount == 0 ? 1 : portCount);
     clientExecutorService = Executors.newFixedThreadPool(maxConnections);
-    runService();
+    startServerPorts();
   }
 
-  public void runService() throws IOException {
+  public void startServerPorts() throws IOException {
     for (Integer port : getPorts()) {
       ServerSocket serverSocket = buildSocket(port);
       LOG.info("Waiting for connections on {}", port);
@@ -214,12 +215,17 @@ public class VirtualTcpService {
       public void closeConnections() throws IOException {
         for (CompletableFuture<FlowConnection> value : map.values()) {
           try {
+            value.cancel(false);
             value.get(CLOSE_SOCKETS_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS).close();
           } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            //Do nothing since there might be a socket that was not used therefore, connection was 
-            //never established in order to properly retrieve socket from completable future
+            // Exceptions are not expected to be thrown since we are canceling all futures before
+            // getting them. Therefore, task won't be; running, interrupted or timeout.
+            throw new RuntimeException(e);
+          } catch (CancellationException e) {
+            LOG.error("Connection canceled since service stopped", e);
           }
         }
+        map.clear();
       }
     };
   }

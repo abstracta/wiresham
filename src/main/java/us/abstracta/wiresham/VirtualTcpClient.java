@@ -71,7 +71,9 @@ public class VirtualTcpClient {
 
       @Override
       public FlowConnection get(int port) throws IOException {
-        map.putIfAbsent(port, new FlowConnection(buildSocket(port), readBufferSize));
+        if (map.get(port) == null) {
+          map.put(port, new FlowConnection(buildSocket(port), readBufferSize));
+        }
         return map.get(port);
       }
 
