@@ -9,7 +9,8 @@ import java.util.Objects;
 public abstract class PacketStep {
 
   protected Packet data;
-  protected int port;
+  //Public due to deserialization
+  public int port;
 
   protected PacketStep() {
   }
