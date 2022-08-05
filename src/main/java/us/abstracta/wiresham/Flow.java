@@ -109,7 +109,6 @@ public class Flow {
       long lastTimeMillis = 0;
       // we can't use getNextPacket and do a while != null due to https://github.com/kaitoy/pcap4j/issues/13
       // so we use getNextPacketEx which throws an EOFException when reached end of file
-      int previousSrcPort = 0;
       while (true) {
         org.pcap4j.packet.Packet p = pcap.getNextPacketEx();
         if (!p.contains(TcpPacket.class)) {
@@ -121,22 +120,15 @@ public class Flow {
         }
         IpV4Packet ipV4Packet = p.get(IpV4Packet.class);
         String sourceIp = ipV4Packet.getHeader().getSrcAddr().getHostAddress();
-        int currentSrcPort = ipV4Packet.getPayload().get(TcpPacket.class).getHeader().getSrcPort()
+        int sourcePort = ipV4Packet.getPayload().get(TcpPacket.class).getHeader().getSrcPort()
             .valueAsInt();
         String hexDump = BaseEncoding.base16().encode(payload.getRawData());
         long timeMillis = pcap.getTimestamp().getTime();
         long timeDeltaMillis = lastTimeMillis > 0 ? timeMillis - lastTimeMillis : 0;
         lastTimeMillis = timeMillis;
-        if (serverAddress.equals(sourceIp)) {
-          if (previousSrcPort != currentSrcPort) {
-            steps.add(new SendPacketStep(hexDump, timeDeltaMillis, currentSrcPort));
-            previousSrcPort = currentSrcPort;
-            continue;
-          }
-          steps.add(new SendPacketStep(hexDump, timeDeltaMillis));
-          continue;
-        }
-        steps.add(new ReceivePacketStep(hexDump));
+        steps.add(isServerAddress(sourceIp, String.valueOf(sourcePort), serverAddress) ?
+            new SendPacketStep(hexDump, timeDeltaMillis, sourcePort) :
+            new ReceivePacketStep(hexDump));
       }
     } catch (EOFException e) {
       //just ignore if we reached end of file.
@@ -172,14 +164,25 @@ public class Flow {
 
   private static Representer buildYamlRepresenter() {
     Representer representer = new Representer() {
+      private int previousPort = 0;
+
       @Override
       protected NodeTuple representJavaBeanProperty(Object javaBean, Property property,
           Object propertyValue, Tag customTag) {
         if (property.getType() == long.class && (long) propertyValue == 0) {
           return null;
-        } else {
-          return super.representJavaBeanProperty(javaBean, property, propertyValue, customTag);
+        } else if (property.getType() == int.class) {
+          if ((int) propertyValue == 0) {
+            return null;
+          }
+          if (javaBean instanceof SendPacketStep) {
+            if (previousPort == (int) propertyValue) {
+              return null;
+            }
+            previousPort = (int) propertyValue;
+          }
         }
+        return super.representJavaBeanProperty(javaBean, property, propertyValue, customTag);
       }
     };
 
