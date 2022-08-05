@@ -88,7 +88,8 @@ public class Flow {
               Long.parseLong(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
                   / 1000000;
           return isServerAddress(sourceIp, sourcePort, serverAddress) ? new SendPacketStep(
-              hexDump, timeDeltaMillis) : new ReceivePacketStep(hexDump);
+              hexDump, timeDeltaMillis, Integer.parseInt(sourcePort)) :
+              new ReceivePacketStep(hexDump);
         })
         .collect(Collectors.toList()));
   }
@@ -108,6 +109,7 @@ public class Flow {
       long lastTimeMillis = 0;
       // we can't use getNextPacket and do a while != null due to https://github.com/kaitoy/pcap4j/issues/13
       // so we use getNextPacketEx which throws an EOFException when reached end of file
+      int previousSrcPort = 0;
       while (true) {
         org.pcap4j.packet.Packet p = pcap.getNextPacketEx();
         if (!p.contains(TcpPacket.class)) {
@@ -117,13 +119,24 @@ public class Flow {
         if (payload == null) {
           continue;
         }
-        String sourceIp = p.get(IpV4Packet.class).getHeader().getSrcAddr().getHostAddress();
+        IpV4Packet ipV4Packet = p.get(IpV4Packet.class);
+        String sourceIp = ipV4Packet.getHeader().getSrcAddr().getHostAddress();
+        int currentSrcPort = ipV4Packet.getPayload().get(TcpPacket.class).getHeader().getSrcPort()
+            .valueAsInt();
         String hexDump = BaseEncoding.base16().encode(payload.getRawData());
         long timeMillis = pcap.getTimestamp().getTime();
         long timeDeltaMillis = lastTimeMillis > 0 ? timeMillis - lastTimeMillis : 0;
         lastTimeMillis = timeMillis;
-        steps.add(serverAddress.equals(sourceIp) ? new SendPacketStep(hexDump, timeDeltaMillis)
-            : new ReceivePacketStep(hexDump));
+        if (serverAddress.equals(sourceIp)) {
+          if (previousSrcPort != currentSrcPort) {
+            steps.add(new SendPacketStep(hexDump, timeDeltaMillis, currentSrcPort));
+            previousSrcPort = currentSrcPort;
+            continue;
+          }
+          steps.add(new SendPacketStep(hexDump, timeDeltaMillis));
+          continue;
+        }
+        steps.add(new ReceivePacketStep(hexDump));
       }
     } catch (EOFException e) {
       //just ignore if we reached end of file.
