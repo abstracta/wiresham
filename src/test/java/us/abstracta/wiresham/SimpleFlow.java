@@ -1,6 +1,11 @@
 package us.abstracta.wiresham;
 
+import com.google.common.base.Charsets;
 import java.io.FileNotFoundException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public abstract class SimpleFlow {
 
@@ -16,4 +21,34 @@ public abstract class SimpleFlow {
     return Flow.fromYml(TestResource.getResourceFile("/simple.yaml"));
   }
 
+  public static class FlowBuilder {
+
+    private final List<PacketStep> steps = new ArrayList<>();
+
+    public FlowBuilder withServerPacket(String data, int port) {
+      steps.add(new SendPacketStep(encodeTextToHex(data), 0, port));
+      return this;
+    }
+
+    public FlowBuilder withServerPacket(String data) {
+      steps.add(new SendPacketStep(encodeTextToHex(data), 0));
+      return this;
+    }
+
+    public FlowBuilder withClientPacket(String data) {
+      steps.add(new ReceivePacketStep(encodeTextToHex(data)));
+      return this;
+    }
+
+    private String encodeTextToHex(String text) {
+      byte[] bytes = text.getBytes(Charsets.UTF_8);
+      return IntStream.range(0, bytes.length)
+          .mapToObj(i -> Integer.toHexString(bytes[i]))
+          .collect(Collectors.joining());
+    }
+
+    public Flow build() {
+      return new Flow(steps);
+    }
+  }
 }

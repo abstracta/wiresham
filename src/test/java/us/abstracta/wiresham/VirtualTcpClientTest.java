@@ -43,7 +43,7 @@ public class VirtualTcpClientTest {
       }
     });
     client.setServerAddress("localhost:" + serverSocket.getLocalPort());
-    client.start();
+    client.run();
     socket = socketFuture.get();
   }
 

@@ -2,8 +2,9 @@ package us.abstracta.wiresham;
 
 import java.io.IOException;
 import java.net.Socket;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -48,8 +49,8 @@ public class VirtualTcpClient {
     this.readBufferSize = readBufferSize;
   }
 
-  private Socket buildSocket()
-      throws IOException, NoSuchAlgorithmException, KeyManagementException {
+  private Socket buildSocket(int port)
+      throws IOException {
     if (sslContext != null) {
       return sslContext.getSocketFactory().createSocket(host, port);
     } else {
@@ -58,21 +59,40 @@ public class VirtualTcpClient {
   }
 
   public void run() {
-    try {
-      new ConnectionFlowDriver(buildSocket(), readBufferSize, flow).run();
-    } catch (NoSuchAlgorithmException | KeyManagementException | IOException e) {
-      LOG.error("Problem starting client", e);
-    }
-  }
-
-  public void start() throws IOException, KeyManagementException, NoSuchAlgorithmException {
-    connection = new ConnectionFlowDriver(buildSocket(), readBufferSize, flow);
     executorService = Executors.newSingleThreadExecutor();
+    connection = new ConnectionFlowDriver(buildFlowConnectionProvider(), flow, port);
     executorService.submit(connection);
   }
 
-  public void stop(long timeoutMillis) throws IOException, InterruptedException {
-    connection.close();
+  private FlowConnectionProvider buildFlowConnectionProvider() {
+    return new FlowConnectionProvider() {
+
+      public final Map<Integer, FlowConnection> map = new ConcurrentHashMap<>();
+
+      @Override
+      public FlowConnection get(int port) throws IOException {
+        if (map.get(port) == null) {
+          map.put(port, new FlowConnection(buildSocket(port), readBufferSize));
+        }
+        return map.get(port);
+      }
+
+      @Override
+      public void init(List<Integer> ports, FlowConnection flowConnection) {
+        map.put(flowConnection.getPort(), flowConnection);
+      }
+
+      @Override
+      public void closeConnections() throws IOException {
+        for (FlowConnection value : map.values()) {
+          value.close();
+        }
+      }
+    };
+  }
+
+  public void stop(long timeoutMillis) throws InterruptedException, IOException {
+    connection.closeFlowConnections();
     executorService.shutdown();
     executorService.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS);
     executorService.shutdownNow();

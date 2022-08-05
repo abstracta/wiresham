@@ -3,6 +3,7 @@ package us.abstracta.wiresham;
 import com.fasterxml.jackson.core.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.BaseEncoding;
 import java.io.EOFException;
@@ -56,7 +57,8 @@ public class Flow {
 
   private final List<PacketStep> steps;
 
-  private Flow(List<PacketStep> steps) {
+  @VisibleForTesting
+  public Flow(List<PacketStep> steps) {
     this.steps = steps;
   }
 
@@ -194,5 +196,18 @@ public class Flow {
   @Override
   public int hashCode() {
     return Objects.hash(steps);
+  }
+
+  public int getPortCount() {
+    return getPorts().size();
+  }
+
+  public List<Integer> getPorts() {
+    return steps.stream()
+        .filter(p -> p instanceof SendPacketStep)
+        .map(PacketStep::getPort)
+        .distinct()
+        .filter(Objects::nonNull)
+        .collect(Collectors.toList());
   }
 }

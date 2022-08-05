@@ -168,7 +168,7 @@ public class VirtualTcpServiceMain {
 
   private void runVirtualService(Flow flow) throws IOException, InterruptedException {
     VirtualTcpService service = new VirtualTcpService();
-    service.setPort(port);
+    service.setPortArgument(port);
     if (sslEnabled) {
       try {
         service.setSslContext(SSLContext.getDefault());
