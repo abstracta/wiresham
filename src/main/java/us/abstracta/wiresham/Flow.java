@@ -51,6 +51,8 @@ public class Flow {
   private static final JsonPointer WIRESHARK_SOURCE_IP_PATH = JsonPointer.valueOf("/ip/ip.src");
   private static final JsonPointer WIRESHARK_SOURCE_PORT_PATH = JsonPointer
       .valueOf("/tcp/tcp.srcport");
+  private static final JsonPointer WIRESHARK_DESTINE_PORT_PATH = JsonPointer
+      .valueOf("/tcp/tcp.dstport");
   private static final JsonPointer WIRESHARK_TIME_DELTA_PATH = JsonPointer
       .valueOf("/frame/frame.time_delta_displayed");
   private static final String IP_PORT_SEPARATOR = ":";
@@ -89,7 +91,8 @@ public class Flow {
                   / 1000000;
           return isServerAddress(sourceIp, sourcePort, serverAddress) ? new SendPacketStep(
               hexDump, timeDeltaMillis, Integer.parseInt(sourcePort))
-              : new ReceivePacketStep(hexDump);
+              : new ReceivePacketStep(hexDump,
+                  Integer.parseInt(layers.at(WIRESHARK_DESTINE_PORT_PATH).asText()));
         })
         .collect(Collectors.toList()));
   }
@@ -128,7 +131,9 @@ public class Flow {
         lastTimeMillis = timeMillis;
         steps.add(isServerAddress(sourceIp, String.valueOf(sourcePort), serverAddress)
             ? new SendPacketStep(hexDump, timeDeltaMillis, sourcePort)
-            : new ReceivePacketStep(hexDump));
+            : new ReceivePacketStep(hexDump,
+                ipV4Packet.getPayload().get(TcpPacket.class).getHeader().getDstPort()
+                    .valueAsInt()));
       }
     } catch (EOFException e) {
       //just ignore if we reached end of file.
@@ -172,15 +177,10 @@ public class Flow {
         if (property.getType() == long.class && (long) propertyValue == 0) {
           return null;
         } else if (property.getType() == int.class) {
-          if ((int) propertyValue == 0) {
+          if ((int) propertyValue == 0 || previousPort == (int) propertyValue) {
             return null;
           }
-          if (javaBean instanceof SendPacketStep) {
-            if (previousPort == (int) propertyValue) {
-              return null;
-            }
-            previousPort = (int) propertyValue;
-          }
+          previousPort = (int) propertyValue;
         }
         return super.representJavaBeanProperty(javaBean, property, propertyValue, customTag);
       }
