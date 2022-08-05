@@ -88,8 +88,8 @@ public class Flow {
               Long.parseLong(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
                   / 1000000;
           return isServerAddress(sourceIp, sourcePort, serverAddress) ? new SendPacketStep(
-              hexDump, timeDeltaMillis, Integer.parseInt(sourcePort)) :
-              new ReceivePacketStep(hexDump);
+              hexDump, timeDeltaMillis, Integer.parseInt(sourcePort))
+              : new ReceivePacketStep(hexDump);
         })
         .collect(Collectors.toList()));
   }
@@ -126,9 +126,9 @@ public class Flow {
         long timeMillis = pcap.getTimestamp().getTime();
         long timeDeltaMillis = lastTimeMillis > 0 ? timeMillis - lastTimeMillis : 0;
         lastTimeMillis = timeMillis;
-        steps.add(isServerAddress(sourceIp, String.valueOf(sourcePort), serverAddress) ?
-            new SendPacketStep(hexDump, timeDeltaMillis, sourcePort) :
-            new ReceivePacketStep(hexDump));
+        steps.add(isServerAddress(sourceIp, String.valueOf(sourcePort), serverAddress)
+            ? new SendPacketStep(hexDump, timeDeltaMillis, sourcePort)
+            : new ReceivePacketStep(hexDump));
       }
     } catch (EOFException e) {
       //just ignore if we reached end of file.
