@@ -17,8 +17,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 import org.pcap4j.core.BpfProgram.BpfCompileMode;
 import org.pcap4j.core.NotOpenException;
@@ -31,6 +33,7 @@ import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 import org.yaml.snakeyaml.introspector.Property;
+import org.yaml.snakeyaml.nodes.Node;
 import org.yaml.snakeyaml.nodes.NodeTuple;
 import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
@@ -43,6 +46,7 @@ public class Flow {
   private static final Map<String, Class<?>> YAML_TAGS = ImmutableMap.<String, Class<?>>builder()
       .put("!server", SendPacketStep.class)
       .put("!client", ReceivePacketStep.class)
+      .put("!include", IncludePacketStep.class)
       .build();
 
   private static final JsonPointer WIRESHARK_LAYERS_PATH = JsonPointer.valueOf("/_source/layers");
@@ -57,11 +61,32 @@ public class Flow {
       .valueOf("/frame/frame.time_delta_displayed");
   private static final String IP_PORT_SEPARATOR = ":";
 
-  private final List<PacketStep> steps;
+  public List<PacketStep> steps;
+  public String id;
+
+  public Flow() {
+  }
 
   @VisibleForTesting
   public Flow(List<PacketStep> steps) {
     this.steps = steps;
+  }
+
+  public Flow(List<PacketStep> steps, String id) {
+    this(steps);
+    this.id = id;
+  }
+
+  public void setSteps(List<PacketStep> steps) {
+    this.steps = steps;
+  }
+
+  public String getId() {
+    return id;
+  }
+
+  public void setId(String id) {
+    this.id = id;
   }
 
   public List<PacketStep> getSteps() {
@@ -144,9 +169,60 @@ public class Flow {
   }
 
   public static Flow fromYml(File ymlFile) throws FileNotFoundException {
-    List<PacketStep> packets = new Yaml(buildYamlConstructor())
-        .load(new FileInputStream(ymlFile));
-    return new Flow(packets);
+    List<Flow> flows = new ArrayList<>();
+    new Yaml(buildYamlConstructor())
+        .loadAll(new FileInputStream(ymlFile))
+        .iterator()
+        .forEachRemaining(f -> flows.add((Flow) f));
+    for (Flow flow : flows) {
+      List<PacketStep> steps = new ArrayList<>(flow.steps);
+      Optional<IncludePacketStep> first = getIncludePacket(steps);
+      while (first.isPresent()) {
+        int i = steps.indexOf(first.get());
+        fillConsecutivePacketsWithPortFrom(i + 1, searchClosestPortBackwardsFrom(i - 1, steps),
+            steps);
+        steps.addAll(i, getStepsById(flows, first.get().getId()));
+        steps.remove(first.get());
+        first = getIncludePacket(steps);
+      }
+      flow.setSteps(steps);
+    }
+    return flows.stream().filter(f -> f.getId() == null).findFirst().orElse(flows.get(0));
+  }
+
+  private static List<PacketStep> getStepsById(List<Flow> flows, String id) {
+    return flows.stream().filter(f -> f.getId() != null)
+        .filter(f -> f.getId().equals(id))
+        .findFirst()
+        .orElse(flows.get(Integer.parseInt(id)))
+        .getSteps();
+  }
+
+  private static Optional<IncludePacketStep> getIncludePacket(List<PacketStep> steps) {
+    return steps.stream().filter(s -> s instanceof IncludePacketStep)
+        .map(s -> (IncludePacketStep) s).findFirst();
+  }
+
+  private static void fillConsecutivePacketsWithPortFrom(int index, int port,
+      List<PacketStep> steps) {
+    IntStream.range(index, steps.size())
+        .forEachOrdered(i -> {
+          PacketStep step = steps.get(i);
+          if (step.getPort() != null) {
+            return;
+          }
+          steps.get(i).setPort(port);
+        });
+  }
+
+  private static int searchClosestPortBackwardsFrom(int index, List<PacketStep> steps) {
+    while (index >= 0) {
+      if (steps.get(index).getPort() != null) {
+        return steps.get(index).getPort();
+      }
+      index--;
+    }
+    return 0;
   }
 
   public static Flow fromYmlStream(InputStream stream) {
@@ -156,7 +232,7 @@ public class Flow {
   }
 
   private static Constructor buildYamlConstructor() {
-    Constructor constructor = new Constructor();
+    FlowConstructor constructor = new FlowConstructor();
     YAML_TAGS
         .forEach((tag, clazz) -> constructor.addTypeDescription(new TypeDescription(clazz, tag)));
     return constructor;
@@ -225,5 +301,26 @@ public class Flow {
         .distinct()
         .filter(Objects::nonNull)
         .collect(Collectors.toList());
+  }
+
+  public static class FlowConstructor extends Constructor {
+
+    private int flowIndex = 0;
+
+    @Override
+    protected Object constructObject(Node node) {
+      Object o = super.constructObject(node);
+      if (o instanceof List) {
+        return new Flow((List<PacketStep>) o);
+      } else if (o instanceof Map) {
+        Map<String, Object> map = (Map<String, Object>) o;
+        String id = (String) map.get("id");
+        Flow flow = (Flow) map.get("steps");
+        flow.setId(id != null ? id : String.valueOf(++flowIndex));
+        return flow;
+      }
+      return o;
+    }
+
   }
 }
