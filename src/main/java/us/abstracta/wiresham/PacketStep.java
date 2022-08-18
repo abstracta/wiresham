@@ -8,13 +8,20 @@ import java.util.Objects;
  */
 public abstract class PacketStep {
 
+  //Public due to deserialization
+  public int port;
   protected Packet data;
-
+ 
   protected PacketStep() {
   }
 
   protected PacketStep(String data) {
     this.data = Packet.fromHexDump(data);
+  }
+
+  protected PacketStep(String data, int port) {
+    this(data);
+    this.port = port;
   }
 
   public String getData() {
@@ -25,7 +32,15 @@ public abstract class PacketStep {
     this.data = Packet.fromHexDump(data);
   }
 
-  public abstract void process(ConnectionFlowDriver connectionDriver)
+  public Integer getPort() {
+    return port == 0 ? null : port;
+  }
+
+  public void setPort(int port) {
+    this.port = port;
+  }
+
+  public abstract void process(FlowConnection flowConnection)
       throws IOException, InterruptedException;
 
   @Override

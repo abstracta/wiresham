@@ -61,6 +61,30 @@ The general use case for the tool takes following steps:
           > Check what is the latest version in [releases](https://github.com/abstracta/wiresham/releases)
           
           > Check [VirtualTcpServiceTest](src/test/java/us/abstracta/wiresham/VirtualTcpServiceTest.java) and [VirtualTcpClientTest](src/test/java/us/abstracta/wiresham/VirtualTcpClientTest.java) for simple and raw examples on how to use the classes.
+
+## Must-know features
+
+### Multiple port
+There are some scenarios where we need to mock several services under the same domain but differing from port.
+For such scenarios multiple port support was added.
+Here there is a flow example on how a YAML would look:
+
+```yaml
+- !server {data: FFFF, delayMillis: 10, port: 2324}
+- !client {data: FFFF}
+- !server {data: FFFF, port: 2325}
+- !client {data: FFFF}
+- !server {data: FFFF}
+```
+
+**Important considerations:**
+
+1. Connections can be established at any time
+1. Dump is read sequentially. Meaning that any packet received out of order will be ignored (parallelism not yet supported)
+1. When a port is defined, subsequent packets until another port is defined will use the mentioned port without having to explicitly define it (as shown in the example)
+1. *Wireshark* dumps and *tcpdumps* are parsed using multiple port when providing endpoint address using `-a` flag
+	>  Note: if port is provided alonside with the address *E.g: 0.0.0.0:23* only the specified port will be parsed otherwise, all involved ports will be part of the flow.
+1. Client mode also supported
           
 ## Tips
 

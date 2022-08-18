@@ -3,6 +3,7 @@ package us.abstracta.wiresham;
 import com.fasterxml.jackson.core.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.BaseEncoding;
 import java.io.EOFException;
@@ -50,13 +51,16 @@ public class Flow {
   private static final JsonPointer WIRESHARK_SOURCE_IP_PATH = JsonPointer.valueOf("/ip/ip.src");
   private static final JsonPointer WIRESHARK_SOURCE_PORT_PATH = JsonPointer
       .valueOf("/tcp/tcp.srcport");
+  private static final JsonPointer WIRESHARK_DESTINE_PORT_PATH = JsonPointer
+      .valueOf("/tcp/tcp.dstport");
   private static final JsonPointer WIRESHARK_TIME_DELTA_PATH = JsonPointer
       .valueOf("/frame/frame.time_delta_displayed");
   private static final String IP_PORT_SEPARATOR = ":";
 
   private final List<PacketStep> steps;
 
-  private Flow(List<PacketStep> steps) {
+  @VisibleForTesting
+  public Flow(List<PacketStep> steps) {
     this.steps = steps;
   }
 
@@ -86,7 +90,9 @@ public class Flow {
               Long.parseLong(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
                   / 1000000;
           return isServerAddress(sourceIp, sourcePort, serverAddress) ? new SendPacketStep(
-              hexDump, timeDeltaMillis) : new ReceivePacketStep(hexDump);
+              hexDump, timeDeltaMillis, Integer.parseInt(sourcePort))
+              : new ReceivePacketStep(hexDump,
+                  Integer.parseInt(layers.at(WIRESHARK_DESTINE_PORT_PATH).asText()));
         })
         .collect(Collectors.toList()));
   }
@@ -115,13 +121,19 @@ public class Flow {
         if (payload == null) {
           continue;
         }
-        String sourceIp = p.get(IpV4Packet.class).getHeader().getSrcAddr().getHostAddress();
+        IpV4Packet ipV4Packet = p.get(IpV4Packet.class);
+        String sourceIp = ipV4Packet.getHeader().getSrcAddr().getHostAddress();
+        int sourcePort = ipV4Packet.getPayload().get(TcpPacket.class).getHeader().getSrcPort()
+            .valueAsInt();
         String hexDump = BaseEncoding.base16().encode(payload.getRawData());
         long timeMillis = pcap.getTimestamp().getTime();
         long timeDeltaMillis = lastTimeMillis > 0 ? timeMillis - lastTimeMillis : 0;
         lastTimeMillis = timeMillis;
-        steps.add(serverAddress.equals(sourceIp) ? new SendPacketStep(hexDump, timeDeltaMillis)
-            : new ReceivePacketStep(hexDump));
+        steps.add(isServerAddress(sourceIp, String.valueOf(sourcePort), serverAddress)
+            ? new SendPacketStep(hexDump, timeDeltaMillis, sourcePort)
+            : new ReceivePacketStep(hexDump,
+                ipV4Packet.getPayload().get(TcpPacket.class).getHeader().getDstPort()
+                    .valueAsInt()));
       }
     } catch (EOFException e) {
       //just ignore if we reached end of file.
@@ -157,14 +169,20 @@ public class Flow {
 
   private static Representer buildYamlRepresenter() {
     Representer representer = new Representer() {
+      private int previousPort = 0;
+
       @Override
       protected NodeTuple representJavaBeanProperty(Object javaBean, Property property,
           Object propertyValue, Tag customTag) {
         if (property.getType() == long.class && (long) propertyValue == 0) {
           return null;
-        } else {
-          return super.representJavaBeanProperty(javaBean, property, propertyValue, customTag);
+        } else if (property.getType() == int.class) {
+          if ((int) propertyValue == 0 || previousPort == (int) propertyValue) {
+            return null;
+          }
+          previousPort = (int) propertyValue;
         }
+        return super.representJavaBeanProperty(javaBean, property, propertyValue, customTag);
       }
     };
 
@@ -194,5 +212,18 @@ public class Flow {
   @Override
   public int hashCode() {
     return Objects.hash(steps);
+  }
+
+  public int getPortCount() {
+    return getPorts().size();
+  }
+
+  public List<Integer> getPorts() {
+    return steps.stream()
+        .filter(p -> p instanceof SendPacketStep)
+        .map(PacketStep::getPort)
+        .distinct()
+        .filter(Objects::nonNull)
+        .collect(Collectors.toList());
   }
 }
