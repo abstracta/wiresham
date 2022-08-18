@@ -82,7 +82,8 @@ Here there is a flow example on how a YAML would look:
 1. Connections can be established at any time
 1. Dump is read sequentially. Meaning that any packet received out of order will be ignored (parallelism not yet supported)
 1. When a port is defined, subsequent packets until another port is defined will use the mentioned port without having to explicitly define it (as shown in the example)
-1. Wireshark dumps are parsed using multiple port
+1. *Wireshark* dumps and *tcpdumps* are parsed using multiple port when providing endpoint address using `-a` flag
+	>  Note: if port is provided alonside with the address *E.g: 0.0.0.0:23* only the specified port will be parsed otherwise, all involved ports will be part of the flow.
 1. Client mode also supported
           
 ## Tips
