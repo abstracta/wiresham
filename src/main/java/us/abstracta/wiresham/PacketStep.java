@@ -12,7 +12,7 @@ public abstract class PacketStep {
   public int port;
   protected Packet data;
  
-  public PacketStep() {
+  protected PacketStep() {
   }
 
   protected PacketStep(String data) {

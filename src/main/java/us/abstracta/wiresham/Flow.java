@@ -17,10 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 import org.pcap4j.core.BpfProgram.BpfCompileMode;
 import org.pcap4j.core.NotOpenException;
@@ -169,65 +167,38 @@ public class Flow {
   }
 
   public static Flow fromYml(File ymlFile) throws FileNotFoundException {
-    List<Flow> flows = new ArrayList<>();
-    new Yaml(buildYamlConstructor())
-        .loadAll(new FileInputStream(ymlFile))
-        .iterator()
-        .forEachRemaining(f -> flows.add((Flow) f));
-    parseFlowsFromYml(flows);
-    return flows.stream().filter(f -> f.getId() == null).findFirst().orElse(flows.get(0));
+    List<Flow> flows = StreamSupport.stream(
+            new Yaml(buildYamlConstructor()).loadAll(new FileInputStream(ymlFile))
+                .spliterator(), false)
+        .map(f -> (Flow) f)
+        .collect(Collectors.toList());
+    return new Flow(recursivelySolveSteps(flows.get(0), flows));
   }
 
-  private static void parseFlowsFromYml(List<Flow> flows) {
-    for (Flow flow : flows) {
-      List<PacketStep> steps = new ArrayList<>(flow.steps);
-      Optional<IncludePacketStep> includePacket = getIncludePacket(steps);
-      while (includePacket.isPresent()) {
-        int includeIndex = steps.indexOf(includePacket.get());
-        fillConsecutivePacketsWithPortFrom(includeIndex + 1,
-            searchClosestPortBackwardsFrom(includeIndex - 1, steps),
-            steps);
-        steps.addAll(includeIndex, getStepsById(flows, includePacket.get().getId()));
-        steps.remove(includePacket.get());
-        includePacket = getIncludePacket(steps);
+  private static List<PacketStep> recursivelySolveSteps(Flow flow, List<Flow> flows) {
+    List<PacketStep> steps = new ArrayList<>();
+    int lastPort = 0;
+    for (PacketStep step : flow.steps) {
+      if (step instanceof IncludePacketStep) {
+        steps.addAll(
+            recursivelySolveSteps(findFlow(((IncludePacketStep) step).getId(), flows), flows));
+        continue;
       }
-      flow.setSteps(steps);
+      if (step.getPort() != null) {
+        lastPort = step.getPort();
+      } else {
+        step.setPort(lastPort);
+      }
+      steps.add(step);
     }
+    return steps;
   }
 
-  private static List<PacketStep> getStepsById(List<Flow> flows, String id) {
-    return flows.stream().filter(f -> f.getId() != null)
-        .filter(f -> f.getId().equals(id))
+  private static Flow findFlow(String id, List<Flow> flows) {
+    return flows.stream()
+        .filter(f -> id.equals(f.getId()))
         .findFirst()
-        .orElseGet(() -> flows.get(Integer.parseInt(id)))
-        .getSteps();
-  }
-
-  private static Optional<IncludePacketStep> getIncludePacket(List<PacketStep> steps) {
-    return steps.stream().filter(s -> s instanceof IncludePacketStep)
-        .map(s -> (IncludePacketStep) s).findFirst();
-  }
-
-  private static void fillConsecutivePacketsWithPortFrom(int index, int port,
-      List<PacketStep> steps) {
-    IntStream.range(index, steps.size())
-        .forEachOrdered(i -> {
-          PacketStep step = steps.get(i);
-          if (step.getPort() != null) {
-            return;
-          }
-          steps.get(i).setPort(port);
-        });
-  }
-
-  private static int searchClosestPortBackwardsFrom(int index, List<PacketStep> steps) {
-    while (index >= 0) {
-      if (steps.get(index).getPort() != null) {
-        return steps.get(index).getPort();
-      }
-      index--;
-    }
-    return 0;
+        .orElseGet(() -> flows.get(Integer.parseInt(id)));
   }
 
   public static Flow fromYmlStream(InputStream stream) {
