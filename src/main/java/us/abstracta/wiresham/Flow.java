@@ -174,27 +174,32 @@ public class Flow {
         .loadAll(new FileInputStream(ymlFile))
         .iterator()
         .forEachRemaining(f -> flows.add((Flow) f));
+    parseFlowsFromYml(flows);
+    return flows.stream().filter(f -> f.getId() == null).findFirst().orElse(flows.get(0));
+  }
+
+  private static void parseFlowsFromYml(List<Flow> flows) {
     for (Flow flow : flows) {
       List<PacketStep> steps = new ArrayList<>(flow.steps);
-      Optional<IncludePacketStep> first = getIncludePacket(steps);
-      while (first.isPresent()) {
-        int i = steps.indexOf(first.get());
-        fillConsecutivePacketsWithPortFrom(i + 1, searchClosestPortBackwardsFrom(i - 1, steps),
+      Optional<IncludePacketStep> includePacket = getIncludePacket(steps);
+      while (includePacket.isPresent()) {
+        int includeIndex = steps.indexOf(includePacket.get());
+        fillConsecutivePacketsWithPortFrom(includeIndex + 1,
+            searchClosestPortBackwardsFrom(includeIndex - 1, steps),
             steps);
-        steps.addAll(i, getStepsById(flows, first.get().getId()));
-        steps.remove(first.get());
-        first = getIncludePacket(steps);
+        steps.addAll(includeIndex, getStepsById(flows, includePacket.get().getId()));
+        steps.remove(includePacket.get());
+        includePacket = getIncludePacket(steps);
       }
       flow.setSteps(steps);
     }
-    return flows.stream().filter(f -> f.getId() == null).findFirst().orElse(flows.get(0));
   }
 
   private static List<PacketStep> getStepsById(List<Flow> flows, String id) {
     return flows.stream().filter(f -> f.getId() != null)
         .filter(f -> f.getId().equals(id))
         .findFirst()
-        .orElse(flows.get(Integer.parseInt(id)))
+        .orElseGet(() -> flows.get(Integer.parseInt(id)))
         .getSteps();
   }
 

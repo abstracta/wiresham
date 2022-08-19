@@ -2,9 +2,11 @@ package us.abstracta.wiresham;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
+import us.abstracta.wiresham.SimpleFlow.FlowBuilder;
 
 public class FlowTest {
 
@@ -19,4 +21,18 @@ public class FlowTest {
     ));
   }
 
+  @Test
+  public void shouldGetServerAndClientStepsWhenLoadMultiplePortYamlWithInclude()
+      throws FileNotFoundException {
+    Flow flow = Flow.fromYml(TestResource.getResourceFile("/multiple-port.yaml"));
+    Flow expected = new FlowBuilder()
+        .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, 23)
+        .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+        .withServerPacket(SimpleFlow.SERVER_RESPONSE, 24)
+        .withClientPacket(SimpleFlow.CLIENT_GOODBYE)
+        .withServerPacket(SimpleFlow.SERVER_GOODBYE, 23)
+        .withServerPacket(SimpleFlow.SERVER_GOODBYE, 25)
+        .build();
+    assertEquals(flow, expected);
+  }
 }
