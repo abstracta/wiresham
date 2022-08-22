@@ -14,6 +14,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -272,8 +274,16 @@ public class Flow {
 
   public List<Integer> getPorts() {
     return steps.stream()
-        .filter(p -> p instanceof SendPacketStep)
-        .map(PacketStep::getPort)
+        .map(packetStep -> {
+          if (packetStep instanceof SendPacketStep) {
+            return Collections.singletonList(packetStep.getPort());
+          } else if (packetStep instanceof ParallelPacketStep) {
+            return ((ParallelPacketStep) packetStep).getPorts();
+          }
+          return null;
+        })
+        .filter(Objects::nonNull)
+        .flatMap(Collection::stream)
         .distinct()
         .filter(Objects::nonNull)
         .collect(Collectors.toList());
