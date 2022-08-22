@@ -31,6 +31,7 @@ import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 import org.yaml.snakeyaml.introspector.Property;
+import org.yaml.snakeyaml.nodes.Node;
 import org.yaml.snakeyaml.nodes.NodeTuple;
 import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
@@ -43,6 +44,7 @@ public class Flow {
   private static final Map<String, Class<?>> YAML_TAGS = ImmutableMap.<String, Class<?>>builder()
       .put("!server", SendPacketStep.class)
       .put("!client", ReceivePacketStep.class)
+      .put("!include", IncludePacketStep.class)
       .build();
 
   private static final JsonPointer WIRESHARK_LAYERS_PATH = JsonPointer.valueOf("/_source/layers");
@@ -57,11 +59,32 @@ public class Flow {
       .valueOf("/frame/frame.time_delta_displayed");
   private static final String IP_PORT_SEPARATOR = ":";
 
-  private final List<PacketStep> steps;
+  public List<PacketStep> steps;
+  public String id;
+
+  public Flow() {
+  }
 
   @VisibleForTesting
   public Flow(List<PacketStep> steps) {
     this.steps = steps;
+  }
+
+  public Flow(List<PacketStep> steps, String id) {
+    this(steps);
+    this.id = id;
+  }
+
+  public void setSteps(List<PacketStep> steps) {
+    this.steps = steps;
+  }
+
+  public String getId() {
+    return id;
+  }
+
+  public void setId(String id) {
+    this.id = id;
   }
 
   public List<PacketStep> getSteps() {
@@ -144,9 +167,38 @@ public class Flow {
   }
 
   public static Flow fromYml(File ymlFile) throws FileNotFoundException {
-    List<PacketStep> packets = new Yaml(buildYamlConstructor())
-        .load(new FileInputStream(ymlFile));
-    return new Flow(packets);
+    List<Flow> flows = StreamSupport.stream(
+            new Yaml(buildYamlConstructor()).loadAll(new FileInputStream(ymlFile))
+                .spliterator(), false)
+        .map(f -> (Flow) f)
+        .collect(Collectors.toList());
+    return new Flow(recursivelySolveSteps(flows.get(0), flows));
+  }
+
+  private static List<PacketStep> recursivelySolveSteps(Flow flow, List<Flow> flows) {
+    List<PacketStep> steps = new ArrayList<>();
+    int lastPort = 0;
+    for (PacketStep step : flow.steps) {
+      if (step instanceof IncludePacketStep) {
+        steps.addAll(
+            recursivelySolveSteps(findFlow(((IncludePacketStep) step).getId(), flows), flows));
+        continue;
+      }
+      if (step.getPort() != null) {
+        lastPort = step.getPort();
+      } else {
+        step.setPort(lastPort);
+      }
+      steps.add(step);
+    }
+    return steps;
+  }
+
+  private static Flow findFlow(String id, List<Flow> flows) {
+    return flows.stream()
+        .filter(f -> id.equals(f.getId()))
+        .findFirst()
+        .orElseGet(() -> flows.get(Integer.parseInt(id)));
   }
 
   public static Flow fromYmlStream(InputStream stream) {
@@ -156,7 +208,7 @@ public class Flow {
   }
 
   private static Constructor buildYamlConstructor() {
-    Constructor constructor = new Constructor();
+    FlowConstructor constructor = new FlowConstructor();
     YAML_TAGS
         .forEach((tag, clazz) -> constructor.addTypeDescription(new TypeDescription(clazz, tag)));
     return constructor;
@@ -225,5 +277,26 @@ public class Flow {
         .distinct()
         .filter(Objects::nonNull)
         .collect(Collectors.toList());
+  }
+
+  public static class FlowConstructor extends Constructor {
+
+    private int flowIndex = 0;
+
+    @Override
+    protected Object constructObject(Node node) {
+      Object o = super.constructObject(node);
+      if (o instanceof List) {
+        return new Flow((List<PacketStep>) o);
+      } else if (o instanceof Map) {
+        Map<String, Object> map = (Map<String, Object>) o;
+        String id = (String) map.get("id");
+        Flow flow = (Flow) map.get("steps");
+        flow.setId(id != null ? id : String.valueOf(++flowIndex));
+        return flow;
+      }
+      return o;
+    }
+
   }
 }

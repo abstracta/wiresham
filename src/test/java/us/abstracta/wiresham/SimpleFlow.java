@@ -13,6 +13,8 @@ public abstract class SimpleFlow {
   public static final String CLIENT_REQUEST = "Hello, I'm John";
   public static final String SERVER_RESPONSE = "Hello John";
   public static final String UNEXPECTED_MESSAGE = "What's up!";
+  public static final String CLIENT_GOODBYE = "Bye";
+  public static final String SERVER_GOODBYE = "Bye John";
 
   private SimpleFlow() {
   }
