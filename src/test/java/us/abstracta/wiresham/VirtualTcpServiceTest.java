@@ -1,10 +1,16 @@
 package us.abstracta.wiresham;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -132,5 +138,60 @@ public class VirtualTcpServiceTest {
         () -> subordinateClientSocket.awaitReceive(SimpleFlow.SERVER_WELCOME_MESSAGE));
   }
 
+  @Test
+  public void shouldGetExceptedResponsesWhenUsingParallel() throws Exception {
+    int firstAvailablePort = getAvailablePort();
+    int secondAvailablePort = getAvailablePort();
+    Flow flow = new FlowBuilder()
+        .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, firstAvailablePort)
+        .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+        .withParallelPacket(buildParallelStep(firstAvailablePort, secondAvailablePort))
+        .withClientPacket(SimpleFlow.CLIENT_GOODBYE)
+        .build();
+    setupForMultiplePortService(firstAvailablePort, secondAvailablePort, flow);
+    mainClientSocket.awaitReceive(SimpleFlow.SERVER_WELCOME_MESSAGE);
+    mainClientSocket.send(SimpleFlow.CLIENT_REQUEST);
+    validateParallelSteps();
+    subordinateClientSocket.send(SimpleFlow.CLIENT_GOODBYE);
+  }
+
+  private void validateParallelSteps() throws InterruptedException {
+    ExecutorService firstParallelFlow = Executors.newSingleThreadExecutor();
+    ExecutorService secondParallelFlow = Executors.newSingleThreadExecutor();
+    firstParallelFlow.submit(() -> {
+      try {
+        mainClientSocket.awaitReceive(SimpleFlow.SERVER_RESPONSE);
+        mainClientSocket.send(SimpleFlow.CLIENT_REQUEST);
+        mainClientSocket.awaitReceive(SimpleFlow.SERVER_GOODBYE);
+      } catch (InterruptedException | TimeoutException | IOException e) {
+        throw new RuntimeException(e);
+      }
+    });
+    secondParallelFlow.submit(() -> {
+      try {
+        subordinateClientSocket.awaitReceive(SimpleFlow.SERVER_WELCOME_MESSAGE);
+        subordinateClientSocket.send(SimpleFlow.CLIENT_REQUEST);
+      } catch (InterruptedException | TimeoutException | IOException e) {
+        throw new RuntimeException(e);
+      }
+    });
+    firstParallelFlow.shutdown();
+    secondParallelFlow.shutdown();
+    assertTrue(firstParallelFlow.awaitTermination(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS));
+    assertTrue(secondParallelFlow.awaitTermination(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS));
+  }
+
+  private List<List<PacketStep>> buildParallelStep(int firstAvailablePort,
+      int secondAvailablePort) {
+    return Arrays.asList(
+        new FlowBuilder()
+            .withServerPacket(SimpleFlow.SERVER_RESPONSE, firstAvailablePort)
+            .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+            .withServerPacket(SimpleFlow.SERVER_GOODBYE).build().steps,
+        new FlowBuilder()
+            .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, secondAvailablePort)
+            .withClientPacket(SimpleFlow.CLIENT_REQUEST).build().steps
+    );
+  }
 
 }

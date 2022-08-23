@@ -42,6 +42,11 @@ public abstract class SimpleFlow {
       return this;
     }
 
+    public FlowBuilder withParallelPacket(List<List<PacketStep>> parallelSteps) {
+      steps.add(new ParallelPacketStep(parallelSteps));
+      return this;
+    }
+
     private String encodeTextToHex(String text) {
       byte[] bytes = text.getBytes(Charsets.UTF_8);
       return IntStream.range(0, bytes.length)
