@@ -11,16 +11,21 @@ public class ParallelPacketStep extends PacketStep {
   private List<List<PacketStep>> parallelSteps;
 
   public ParallelPacketStep(List<List<PacketStep>> parallelSteps) {
+    this.parallelSteps = parallelSteps;
+  }
 
+  public List<List<PacketStep>> getParallelSteps() {
+    return parallelSteps;
+  }
+
+  public void setParallelSteps(
+      List<List<PacketStep>> parallelSteps) {
+    this.parallelSteps = parallelSteps;
   }
 
   @Override
   public void process(FlowConnection flowConnection) throws IOException, InterruptedException {
 
-  }
-
-  public List<List<PacketStep>> getParallelSteps() {
-    return parallelSteps;
   }
 
   public List<Integer> getPorts() {

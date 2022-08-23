@@ -1,13 +1,14 @@
 package us.abstracta.wiresham;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -18,7 +19,6 @@ import org.slf4j.MDC;
 public class ConnectionFlowDriver implements Runnable {
 
   private static final Logger LOG = LoggerFactory.getLogger(ConnectionFlowDriver.class);
-  private static final int PARALLEL_THREADS_TIMEOUT = 60000;
 
   private final FlowConnectionProvider connectionProvider;
   private final Queue<PacketStep> flowSteps;
@@ -58,6 +58,7 @@ public class ConnectionFlowDriver implements Runnable {
     while (!flowSteps.isEmpty()) {
       PacketStep step = flowSteps.poll();
       if (step instanceof ParallelPacketStep) {
+        LOG.info("starting parallel execution");
         processParallelSteps((ParallelPacketStep) step, previousPort, connectionProvider);
         continue;
       }
@@ -74,17 +75,18 @@ public class ConnectionFlowDriver implements Runnable {
       FlowConnectionProvider connectionProvider) {
     List<List<PacketStep>> parallelSteps = step.getParallelSteps();
     ExecutorService parallelStepsExecutor = Executors.newFixedThreadPool(parallelSteps.size());
+    List<Future<?>> parallelFutures = new ArrayList<>();
     for (List<PacketStep> parallelStep : parallelSteps) {
       Queue<PacketStep> steps = new LinkedList<>(parallelStep);
-      parallelStepsExecutor.submit(() -> {
+      parallelFutures.add(parallelStepsExecutor.submit(() -> {
         try {
           processSteps(steps, previousPort, connectionProvider);
         } catch (ExecutionException | InterruptedException | IOException e) {
           handleProcessStepExceptions(e);
         }
-      });
+      }));
     }
-    joinParallelExecutions(parallelStepsExecutor);
+    joinParallelExecutions(parallelStepsExecutor, parallelFutures);
   }
 
   private static void handleProcessStepExceptions(Exception e) {
@@ -108,19 +110,18 @@ public class ConnectionFlowDriver implements Runnable {
     }
   }
 
-  private static void joinParallelExecutions(ExecutorService parallelStepsExecutor) {
+  private static void joinParallelExecutions(ExecutorService parallelStepsExecutor,
+      List<Future<?>> parallelFutures) {
     parallelStepsExecutor.shutdown();
-    while (true) {
+    parallelFutures.forEach(future -> {
       try {
-        if (parallelStepsExecutor.awaitTermination(PARALLEL_THREADS_TIMEOUT,
-            TimeUnit.MILLISECONDS)) {
-          break;
-        }
+        future.get();
       } catch (InterruptedException e) {
         LOG.error("Parallel steps where interrupted", e);
+      } catch (ExecutionException ignored) {
+        //Should not occur since we are catching all exceptions inside task
       }
-
-    }
+    });
   }
 
   public FlowConnectionProvider getConnectionProvider() {
