@@ -36,7 +36,6 @@ public class ParallelPacketStep extends PacketStep {
   public List<Integer> getPorts() {
     return parallelSteps.stream()
         .flatMap(Collection::stream)
-        .filter(p -> p instanceof SendPacketStep)
         .map(PacketStep::getPort)
         .distinct()
         .filter(Objects::nonNull)
