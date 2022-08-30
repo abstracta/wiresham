@@ -35,6 +35,7 @@ import org.yaml.snakeyaml.constructor.Constructor;
 import org.yaml.snakeyaml.introspector.Property;
 import org.yaml.snakeyaml.nodes.Node;
 import org.yaml.snakeyaml.nodes.NodeTuple;
+import org.yaml.snakeyaml.nodes.SequenceNode;
 import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 
@@ -47,6 +48,7 @@ public class Flow {
       .put("!server", SendPacketStep.class)
       .put("!client", ReceivePacketStep.class)
       .put("!include", IncludePacketStep.class)
+      .put("!parallel:", ParallelPacketStep.class)
       .build();
 
   private static final JsonPointer WIRESHARK_LAYERS_PATH = JsonPointer.valueOf("/_source/layers");
@@ -280,9 +282,8 @@ public class Flow {
           } else if (packetStep instanceof ParallelPacketStep) {
             return ((ParallelPacketStep) packetStep).getPorts();
           }
-          return null;
+          return Collections.<Integer>emptyList();
         })
-        .filter(Objects::nonNull)
         .flatMap(Collection::stream)
         .distinct()
         .filter(Objects::nonNull)
@@ -295,6 +296,14 @@ public class Flow {
 
     @Override
     protected Object constructObject(Node node) {
+      if (node.getTag().getValue().equals("!parallel:")) {
+        List<Node> sequenceNodes = ((SequenceNode) node).getValue();
+        List<List<PacketStep>> parallelSteps = new ArrayList<>();
+        for (Node sequenceNode : sequenceNodes) {
+          parallelSteps.add((List<PacketStep>) super.constructObject(sequenceNode));
+        }
+        return new ParallelPacketStep(parallelSteps);
+      }
       Object o = super.constructObject(node);
       if (o instanceof List) {
         return new Flow((List<PacketStep>) o);
