@@ -117,9 +117,9 @@ public class ConnectionFlowDriver implements Runnable {
       try {
         future.get();
       } catch (InterruptedException e) {
-        LOG.error("Parallel steps where interrupted", e);
-      } catch (ExecutionException ignored) {
-        //Should not occur since we are catching all exceptions inside task
+        LOG.warn("Parallel steps where interrupted", e);
+      } catch (ExecutionException e) {
+        LOG.trace("Unexpected exception when waiting for parallel threads to end", e);
       }
     });
   }
