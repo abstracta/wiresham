@@ -1,0 +1,10 @@
+- !server { data: 48656C6C6F, port: 23}
+- !client { data: 48656C6C6F2C2049276D204A6F686E }
+- !parallel:
+    -
+      - !server { data: 48656C6C6F204A6F686E, port: 24 }
+      - !client { data: 48656C6C6F2C2049276D204A6F686E }
+      - !server { data: 427965204A6F686E }
+    - 
+      - !server { data: 48656C6C6F, port: 25}
+      - !client { data: 48656C6C6F2C2049276D204A6F686E }

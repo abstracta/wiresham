@@ -35,4 +35,22 @@ public class FlowTest {
         .build();
     assertEquals(flow, expected);
   }
+
+  @Test
+  public void shouldGetServerAndClientStepsWhenLoadParallelFlow() throws FileNotFoundException {
+    Flow flow = Flow.fromYml(TestResource.getResourceFile("/parallel.yaml"));
+    Flow expected = new FlowBuilder()
+        .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, 23)
+        .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+        .withParallelPacket(Arrays.asList(
+            new FlowBuilder()
+                .withServerPacket(SimpleFlow.SERVER_RESPONSE, 24)
+                .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+                .withServerPacket(SimpleFlow.SERVER_GOODBYE).build().steps,
+            new FlowBuilder()
+                .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, 25)
+                .withClientPacket(SimpleFlow.CLIENT_REQUEST).build().steps
+        )).build();
+    assertEquals(expected, flow);
+  }
 }
