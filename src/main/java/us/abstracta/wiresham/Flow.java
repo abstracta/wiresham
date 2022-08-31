@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -63,23 +62,23 @@ public class Flow {
       .valueOf("/frame/frame.time_delta_displayed");
   private static final String IP_PORT_SEPARATOR = ":";
 
-  public List<PacketStep> steps;
+  public List<FlowStep> steps;
   public String id;
 
   public Flow() {
   }
 
   @VisibleForTesting
-  public Flow(List<PacketStep> steps) {
+  public Flow(List<FlowStep> steps) {
     this.steps = steps;
   }
 
-  public Flow(List<PacketStep> steps, String id) {
+  public Flow(List<FlowStep> steps, String id) {
     this(steps);
     this.id = id;
   }
 
-  public void setSteps(List<PacketStep> steps) {
+  public void setSteps(List<FlowStep> steps) {
     this.steps = steps;
   }
 
@@ -91,7 +90,7 @@ public class Flow {
     this.id = id;
   }
 
-  public List<PacketStep> getSteps() {
+  public List<FlowStep> getSteps() {
     return steps;
   }
 
@@ -131,7 +130,7 @@ public class Flow {
   }
 
   public static Flow fromPcap(File file, String serverAddress, String filter) throws IOException {
-    List<PacketStep> steps = new ArrayList<>();
+    List<FlowStep> steps = new ArrayList<>();
     try (PcapHandle pcap = Pcaps.openOffline(file.getAbsolutePath())) {
       if (filter != null) {
         pcap.setFilter(filter, BpfCompileMode.OPTIMIZE);
@@ -179,21 +178,25 @@ public class Flow {
     return new Flow(recursivelySolveSteps(flows.get(0), flows));
   }
 
-  private static List<PacketStep> recursivelySolveSteps(Flow flow, List<Flow> flows) {
-    List<PacketStep> steps = new ArrayList<>();
+  private static List<FlowStep> recursivelySolveSteps(Flow flow, List<Flow> flows) {
+    List<FlowStep> steps = new ArrayList<>();
     int lastPort = 0;
-    for (PacketStep step : flow.steps) {
+    for (FlowStep step : flow.steps) {
       if (step instanceof IncludePacketStep) {
         steps.addAll(
             recursivelySolveSteps(findFlow(((IncludePacketStep) step).getId(), flows), flows));
         continue;
+      } else if (step instanceof ParallelPacketStep) {
+        steps.add(resolveParallelSteps((ParallelPacketStep) step, flows));
+        continue;
       }
-      if (step.getPort() != null) {
-        lastPort = step.getPort();
+      PacketStep packetStep = (PacketStep) step;
+      if (!packetStep.getPorts().isEmpty()) {
+        lastPort = packetStep.getPorts().get(0);
       } else {
-        step.setPort(lastPort);
+        packetStep.setPort(lastPort);
       }
-      steps.add(step);
+      steps.add(packetStep);
     }
     return steps;
   }
@@ -205,8 +208,16 @@ public class Flow {
         .orElseGet(() -> flows.get(Integer.parseInt(id)));
   }
 
+  private static FlowStep resolveParallelSteps(ParallelPacketStep step, List<Flow> flows) {
+    ParallelPacketStep ret = new ParallelPacketStep();
+    for (List<FlowStep> parallelStep : step.getParallelSteps()) {
+      ret.addParallelStep(recursivelySolveSteps(new Flow(parallelStep), flows));
+    }
+    return ret;
+  }
+
   public static Flow fromYmlStream(InputStream stream) {
-    List<PacketStep> packets = new Yaml(buildYamlConstructor())
+    List<FlowStep> packets = new Yaml(buildYamlConstructor())
         .load(stream);
     return new Flow(packets);
   }
@@ -248,8 +259,9 @@ public class Flow {
 
   public Flow reversed() {
     return new Flow(steps.stream()
-        .map(s -> s instanceof SendPacketStep ? new ReceivePacketStep(s.data.toString())
-            : new SendPacketStep(s.data.toString(), 0))
+        .map(s -> s instanceof SendPacketStep ? new ReceivePacketStep(
+            ((PacketStep) s).data.toString())
+            : new SendPacketStep(((PacketStep) s).data.toString(), 0))
         .collect(Collectors.toList()));
   }
 
@@ -276,14 +288,7 @@ public class Flow {
 
   public List<Integer> getPorts() {
     return steps.stream()
-        .map(packetStep -> {
-          if (packetStep instanceof SendPacketStep) {
-            return Collections.singletonList(packetStep.getPort());
-          } else if (packetStep instanceof ParallelPacketStep) {
-            return ((ParallelPacketStep) packetStep).getPorts();
-          }
-          return Collections.<Integer>emptyList();
-        })
+        .map(FlowStep::getPorts)
         .flatMap(Collection::stream)
         .distinct()
         .filter(Objects::nonNull)
@@ -298,15 +303,15 @@ public class Flow {
     protected Object constructObject(Node node) {
       if (node.getTag().getValue().equals("!parallel:")) {
         List<Node> sequenceNodes = ((SequenceNode) node).getValue();
-        List<List<PacketStep>> parallelSteps = new ArrayList<>();
+        List<List<FlowStep>> parallelSteps = new ArrayList<>();
         for (Node sequenceNode : sequenceNodes) {
-          parallelSteps.add((List<PacketStep>) super.constructObject(sequenceNode));
+          parallelSteps.add((List<FlowStep>) super.constructObject(sequenceNode));
         }
         return new ParallelPacketStep(parallelSteps);
       }
       Object o = super.constructObject(node);
       if (o instanceof List) {
-        return new Flow((List<PacketStep>) o);
+        return new Flow((List<FlowStep>) o);
       } else if (o instanceof Map) {
         Map<String, Object> map = (Map<String, Object>) o;
         String id = (String) map.get("id");

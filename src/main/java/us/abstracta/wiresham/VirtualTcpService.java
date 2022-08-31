@@ -53,7 +53,9 @@ public class VirtualTcpService {
   public void setFlow(Flow flow) {
     this.flow = flow;
     Optional<PacketStep> bigPacketStep = flow.getSteps().stream()
-        .filter(s -> s instanceof ReceivePacketStep && s.data.getBytes().length > readBufferSize)
+        .filter(s -> s instanceof ReceivePacketStep
+            && ((ReceivePacketStep) s).data.getBytes().length > readBufferSize)
+        .map(p -> (PacketStep) p)
         .findAny();
     if (bigPacketStep.isPresent()) {
       throw new IllegalArgumentException(String.format(

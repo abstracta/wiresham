@@ -1,6 +1,9 @@
 package us.abstracta.wiresham;
 
-public class IncludePacketStep extends PacketStep {
+import java.util.Collections;
+import java.util.List;
+
+public class IncludePacketStep implements FlowStep {
 
   private String id;
 
@@ -22,7 +25,7 @@ public class IncludePacketStep extends PacketStep {
   }
 
   @Override
-  public void process(FlowConnection flowConnection) {
-
+  public List<Integer> getPorts() {
+    return Collections.emptyList();
   }
 }

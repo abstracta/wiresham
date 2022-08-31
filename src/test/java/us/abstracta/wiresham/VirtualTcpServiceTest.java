@@ -181,7 +181,7 @@ public class VirtualTcpServiceTest {
     assertTrue(secondParallelFlow.awaitTermination(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS));
   }
 
-  private List<List<PacketStep>> buildParallelStep(int firstAvailablePort,
+  private List<List<FlowStep>> buildParallelStep(int firstAvailablePort,
       int secondAvailablePort) {
     return Arrays.asList(
         new FlowBuilder()

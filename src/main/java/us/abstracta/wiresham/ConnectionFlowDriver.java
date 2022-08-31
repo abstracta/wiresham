@@ -21,7 +21,7 @@ public class ConnectionFlowDriver implements Runnable {
   private static final Logger LOG = LoggerFactory.getLogger(ConnectionFlowDriver.class);
 
   private final FlowConnectionProvider connectionProvider;
-  private final Queue<PacketStep> flowSteps;
+  private final Queue<FlowStep> flowSteps;
   private final int portArgument;
 
   public ConnectionFlowDriver(FlowConnectionProvider connectionProvider,
@@ -34,9 +34,9 @@ public class ConnectionFlowDriver implements Runnable {
   @Override
   public void run() {
     try {
-      PacketStep first = flowSteps.peek();
-      int previousPort = (first == null || first.getPort() == null)
-          ? portArgument : first.getPort();
+      FlowStep first = flowSteps.peek();
+      int previousPort = (first == null || first.getPorts().isEmpty())
+          ? portArgument : first.getPorts().get(0);
       LOG.info("starting new flow on {}", previousPort);
       processSteps(flowSteps, previousPort, connectionProvider);
       LOG.info("flow completed!");
@@ -52,32 +52,33 @@ public class ConnectionFlowDriver implements Runnable {
     }
   }
 
-  private static void processSteps(Queue<PacketStep> flowSteps, int previousPort,
+  private static void processSteps(Queue<FlowStep> flowSteps, int previousPort,
       FlowConnectionProvider connectionProvider)
       throws ExecutionException, InterruptedException, IOException {
     while (!flowSteps.isEmpty()) {
-      PacketStep step = flowSteps.poll();
+      FlowStep step = flowSteps.poll();
       if (step instanceof ParallelPacketStep) {
         LOG.info("starting parallel execution");
         processParallelSteps((ParallelPacketStep) step, previousPort, connectionProvider);
         continue;
       }
-      if (step.getPort() != null && step.getPort() != previousPort) {
-        LOG.info("changing to connections on port {}", step.getPort());
-        previousPort = step.getPort();
+      PacketStep packetStep = (PacketStep) step;
+      if (!packetStep.getPorts().isEmpty() && packetStep.getPorts().get(0) != previousPort) {
+        LOG.info("changing to connections on port {}", packetStep.getPorts().get(0));
+        previousPort = packetStep.getPorts().get(0);
       }
       FlowConnection flowConnection = connectionProvider.get(previousPort);
-      step.process(flowConnection);
+      packetStep.process(flowConnection);
     }
   }
 
   private static void processParallelSteps(ParallelPacketStep step, int previousPort,
       FlowConnectionProvider connectionProvider) {
-    List<List<PacketStep>> parallelSteps = step.getParallelSteps();
+    List<List<FlowStep>> parallelSteps = step.getParallelSteps();
     ExecutorService parallelStepsExecutor = Executors.newFixedThreadPool(parallelSteps.size());
     List<Future<?>> parallelFutures = new ArrayList<>();
-    for (List<PacketStep> parallelStep : parallelSteps) {
-      Queue<PacketStep> steps = new LinkedList<>(parallelStep);
+    for (List<FlowStep> parallelStep : parallelSteps) {
+      Queue<FlowStep> steps = new LinkedList<>(parallelStep);
       parallelFutures.add(parallelStepsExecutor.submit(() -> {
         try {
           processSteps(steps, previousPort, connectionProvider);
