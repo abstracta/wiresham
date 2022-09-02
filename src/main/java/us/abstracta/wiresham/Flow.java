@@ -210,7 +210,7 @@ public class Flow {
 
   private static FlowStep resolveParallelSteps(ParallelFlowStep step, List<Flow> flows) {
     ParallelFlowStep ret = new ParallelFlowStep();
-    for (List<FlowStep> parallelStep : step.getParallelSteps()) {
+    for (List<FlowStep> parallelStep : step.getForks()) {
       ret.addParallelStep(recursivelySolveSteps(new Flow(parallelStep), flows));
     }
     return ret;

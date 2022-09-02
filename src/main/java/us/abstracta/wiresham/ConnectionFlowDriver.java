@@ -74,10 +74,10 @@ public class ConnectionFlowDriver implements Runnable {
 
   private static void processParallelSteps(ParallelFlowStep step, int previousPort,
       FlowConnectionProvider connectionProvider) {
-    List<List<FlowStep>> parallelSteps = step.getParallelSteps();
-    ExecutorService parallelStepsExecutor = Executors.newFixedThreadPool(parallelSteps.size());
+    List<List<FlowStep>> forks = step.getForks();
+    ExecutorService parallelStepsExecutor = Executors.newFixedThreadPool(forks.size());
     List<Future<?>> parallelFutures = new ArrayList<>();
-    for (List<FlowStep> parallelStep : parallelSteps) {
+    for (List<FlowStep> parallelStep : forks) {
       Queue<FlowStep> steps = new LinkedList<>(parallelStep);
       parallelFutures.add(parallelStepsExecutor.submit(() -> {
         try {

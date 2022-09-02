@@ -8,32 +8,32 @@ import java.util.stream.Collectors;
 
 public class ParallelFlowStep implements FlowStep {
 
-  private List<List<FlowStep>> parallelSteps;
+  private List<List<FlowStep>> forks;
 
   public ParallelFlowStep() {
-    this.parallelSteps = new ArrayList<>();
+    this.forks = new ArrayList<>();
   }
 
   public ParallelFlowStep(List<List<FlowStep>> parallelSteps) {
-    this.parallelSteps = parallelSteps;
+    this.forks = parallelSteps;
   }
 
-  public List<List<FlowStep>> getParallelSteps() {
-    return parallelSteps;
+  public List<List<FlowStep>> getForks() {
+    return forks;
   }
 
-  public void setParallelSteps(
-      List<List<FlowStep>> parallelSteps) {
-    this.parallelSteps = parallelSteps;
+  public void setForks(
+      List<List<FlowStep>> forks) {
+    this.forks = forks;
   }
 
   public void addParallelStep(List<FlowStep> flowSteps) {
-    this.parallelSteps.add(flowSteps);
+    this.forks.add(flowSteps);
   }
 
   @Override
   public List<Integer> getPorts() {
-    return parallelSteps.stream()
+    return forks.stream()
         .flatMap(Collection::stream)
         .map(FlowStep::getPorts)
         .flatMap(Collection::stream)
@@ -51,18 +51,18 @@ public class ParallelFlowStep implements FlowStep {
       return false;
     }
     ParallelFlowStep that = (ParallelFlowStep) o;
-    return Objects.equals(parallelSteps, that.parallelSteps);
+    return Objects.equals(forks, that.forks);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(super.hashCode(), parallelSteps);
+    return Objects.hash(super.hashCode(), forks);
   }
 
   @Override
   public String toString() {
     return "ParallelPacketStep{" +
-        "parallelSteps=" + parallelSteps.stream()
+        "parallelSteps=" + forks.stream()
         .map(ps -> String.format("[%s]",
             ps.stream()
                 .map(FlowStep::toString)
