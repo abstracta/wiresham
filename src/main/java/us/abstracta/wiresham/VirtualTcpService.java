@@ -134,7 +134,7 @@ public class VirtualTcpService {
       return;
     }
     FlowConnectionProvider connectionProvider = buildFlowConnectionProvider();
-    connectionProvider.init(flow.getPorts(), flowConnection);
+    connectionProvider.init(getPorts(), flowConnection);
     addClient(new ConnectionFlowDriver(connectionProvider, flow, portArgument));
   }
 
@@ -176,6 +176,7 @@ public class VirtualTcpService {
           LOG.error("Problem closing connection ", e);
         }
       });
+      connectionDrivers.clear();
     }
     clientExecutorService.shutdown();
     if (!clientExecutorService.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS)) {

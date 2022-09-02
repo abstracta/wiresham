@@ -50,7 +50,7 @@ public class ReloadServiceTest {
 
   private void setupConfigFile() throws IOException {
     File file = Files.newTemporaryFile();
-    configFile = new FileMock(file.getName(),
+    configFile = new FileMock(file.getAbsolutePath(),
         registerWatchServiceLock);
     writeInConfigFile(Collections.singletonList("TEST"));
   }
@@ -234,7 +234,7 @@ public class ReloadServiceTest {
 
     @Override
     public Path resolveSibling(Path other) {
-      return path.resolveSibling(other);
+      return new PathMock(path.resolveSibling(other), lock);
     }
 
     @Override
@@ -255,8 +255,16 @@ public class ReloadServiceTest {
     }
 
     @Override
+    public String toString() {
+      return path.toString();
+    }
+
+    @Override
     public boolean equals(Object obj) {
-      return path.equals(obj);
+      if (!(obj instanceof Path)) {
+        return false;
+      }
+      return path.toAbsolutePath().toString().equals(((Path) obj).toAbsolutePath().toString());
     }
   }
 

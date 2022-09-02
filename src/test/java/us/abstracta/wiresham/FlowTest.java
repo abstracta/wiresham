@@ -15,10 +15,10 @@ public class FlowTest {
       throws IOException {
     Flow flow = Flow.fromWiresharkJsonDump(TestResource.getResourceFile("/serverOnLocalPort.json"),
         "127.0.0.1:3469");
-    assertEquals(flow.getSteps(), Arrays.asList(
+    assertEquals(Arrays.asList(
         new ReceivePacketStep("43485F4643457C31307C0D0A"),
-        new SendPacketStep("5245535F4643457C547C332E302E3135352E313731FF", 0)
-    ));
+        new SendPacketStep("5245535F4643457C547C332E302E3135352E313731FF", 25, 3469)
+    ), flow.getSteps());
   }
 
   @Test

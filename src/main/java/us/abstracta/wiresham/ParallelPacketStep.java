@@ -58,4 +58,16 @@ public class ParallelPacketStep implements FlowStep {
   public int hashCode() {
     return Objects.hash(super.hashCode(), parallelSteps);
   }
+
+  @Override
+  public String toString() {
+    return "ParallelPacketStep{" +
+        "parallelSteps=" + parallelSteps.stream()
+        .map(ps -> String.format("[%s]",
+            ps.stream()
+                .map(FlowStep::toString)
+                .collect(Collectors.joining(","))))
+        .collect(Collectors.joining(",")) +
+        '}';
+  }
 }
