@@ -43,7 +43,7 @@ public abstract class SimpleFlow {
     }
 
     public FlowBuilder withParallelPacket(List<List<FlowStep>> parallelSteps) {
-      steps.add(new ParallelPacketStep(parallelSteps));
+      steps.add(new ParallelFlowStep(parallelSteps));
       return this;
     }
 

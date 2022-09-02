@@ -46,8 +46,8 @@ public class Flow {
   private static final Map<String, Class<?>> YAML_TAGS = ImmutableMap.<String, Class<?>>builder()
       .put("!server", SendPacketStep.class)
       .put("!client", ReceivePacketStep.class)
-      .put("!include", IncludePacketStep.class)
-      .put("!parallel:", ParallelPacketStep.class)
+      .put("!include", IncludeFlowStep.class)
+      .put("!parallel:", ParallelFlowStep.class)
       .build();
 
   private static final JsonPointer WIRESHARK_LAYERS_PATH = JsonPointer.valueOf("/_source/layers");
@@ -182,12 +182,12 @@ public class Flow {
     List<FlowStep> steps = new ArrayList<>();
     int lastPort = 0;
     for (FlowStep step : flow.steps) {
-      if (step instanceof IncludePacketStep) {
+      if (step instanceof IncludeFlowStep) {
         steps.addAll(
-            recursivelySolveSteps(findFlow(((IncludePacketStep) step).getId(), flows), flows));
+            recursivelySolveSteps(findFlow(((IncludeFlowStep) step).getId(), flows), flows));
         continue;
-      } else if (step instanceof ParallelPacketStep) {
-        steps.add(resolveParallelSteps((ParallelPacketStep) step, flows));
+      } else if (step instanceof ParallelFlowStep) {
+        steps.add(resolveParallelSteps((ParallelFlowStep) step, flows));
         continue;
       }
       PacketStep packetStep = (PacketStep) step;
@@ -208,8 +208,8 @@ public class Flow {
         .orElseGet(() -> flows.get(Integer.parseInt(id)));
   }
 
-  private static FlowStep resolveParallelSteps(ParallelPacketStep step, List<Flow> flows) {
-    ParallelPacketStep ret = new ParallelPacketStep();
+  private static FlowStep resolveParallelSteps(ParallelFlowStep step, List<Flow> flows) {
+    ParallelFlowStep ret = new ParallelFlowStep();
     for (List<FlowStep> parallelStep : step.getParallelSteps()) {
       ret.addParallelStep(recursivelySolveSteps(new Flow(parallelStep), flows));
     }
@@ -307,7 +307,7 @@ public class Flow {
         for (Node sequenceNode : sequenceNodes) {
           parallelSteps.add((List<FlowStep>) super.constructObject(sequenceNode));
         }
-        return new ParallelPacketStep(parallelSteps);
+        return new ParallelFlowStep(parallelSteps);
       }
       Object o = super.constructObject(node);
       if (o instanceof List) {

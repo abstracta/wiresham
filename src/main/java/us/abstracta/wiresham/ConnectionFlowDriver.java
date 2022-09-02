@@ -57,9 +57,9 @@ public class ConnectionFlowDriver implements Runnable {
       throws ExecutionException, InterruptedException, IOException {
     while (!flowSteps.isEmpty()) {
       FlowStep step = flowSteps.poll();
-      if (step instanceof ParallelPacketStep) {
+      if (step instanceof ParallelFlowStep) {
         LOG.info("starting parallel execution");
-        processParallelSteps((ParallelPacketStep) step, previousPort, connectionProvider);
+        processParallelSteps((ParallelFlowStep) step, previousPort, connectionProvider);
         continue;
       }
       PacketStep packetStep = (PacketStep) step;
@@ -72,7 +72,7 @@ public class ConnectionFlowDriver implements Runnable {
     }
   }
 
-  private static void processParallelSteps(ParallelPacketStep step, int previousPort,
+  private static void processParallelSteps(ParallelFlowStep step, int previousPort,
       FlowConnectionProvider connectionProvider) {
     List<List<FlowStep>> parallelSteps = step.getParallelSteps();
     ExecutorService parallelStepsExecutor = Executors.newFixedThreadPool(parallelSteps.size());

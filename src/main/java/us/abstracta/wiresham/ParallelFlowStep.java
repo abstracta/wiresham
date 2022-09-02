@@ -6,15 +6,15 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-public class ParallelPacketStep implements FlowStep {
+public class ParallelFlowStep implements FlowStep {
 
   private List<List<FlowStep>> parallelSteps;
 
-  public ParallelPacketStep() {
+  public ParallelFlowStep() {
     this.parallelSteps = new ArrayList<>();
   }
 
-  public ParallelPacketStep(List<List<FlowStep>> parallelSteps) {
+  public ParallelFlowStep(List<List<FlowStep>> parallelSteps) {
     this.parallelSteps = parallelSteps;
   }
 
@@ -50,7 +50,7 @@ public class ParallelPacketStep implements FlowStep {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    ParallelPacketStep that = (ParallelPacketStep) o;
+    ParallelFlowStep that = (ParallelFlowStep) o;
     return Objects.equals(parallelSteps, that.parallelSteps);
   }
 

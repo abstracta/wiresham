@@ -3,16 +3,16 @@ package us.abstracta.wiresham;
 import java.util.Collections;
 import java.util.List;
 
-public class IncludePacketStep implements FlowStep {
+public class IncludeFlowStep implements FlowStep {
 
   private String id;
 
   // Constructor left for serialization/deserialization proposes 
-  public IncludePacketStep() {
+  public IncludeFlowStep() {
   }
 
   // Constructor left for serialization/deserialization proposes 
-  public IncludePacketStep(String id) {
+  public IncludeFlowStep(String id) {
     this.id = id;
   }
 
