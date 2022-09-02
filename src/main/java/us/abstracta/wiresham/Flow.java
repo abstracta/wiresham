@@ -301,7 +301,7 @@ public class Flow {
 
     @Override
     protected Object constructObject(Node node) {
-      if (node.getTag().getValue().equals("!parallel:")) {
+      if (node.getTag().getValue().equals("!parallel")) {
         List<Node> sequenceNodes = ((SequenceNode) node).getValue();
         List<List<FlowStep>> parallelSteps = new ArrayList<>();
         for (Node sequenceNode : sequenceNodes) {

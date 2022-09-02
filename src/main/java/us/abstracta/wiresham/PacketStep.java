@@ -36,7 +36,7 @@ public abstract class PacketStep implements FlowStep {
 
   @Override
   public List<Integer> getPorts() {
-    return Collections.singletonList(port == 0 ? null : port);
+    return port != 0 ? Collections.singletonList(port) : Collections.emptyList();
   }
 
   public void setPort(int port) {

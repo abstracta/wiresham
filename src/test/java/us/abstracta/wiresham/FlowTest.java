@@ -46,7 +46,7 @@ public class FlowTest {
             new FlowBuilder()
                 .withServerPacket(SimpleFlow.SERVER_RESPONSE, 24)
                 .withClientPacket(SimpleFlow.CLIENT_REQUEST)
-                .withServerPacket(SimpleFlow.SERVER_GOODBYE).build().steps,
+                .withServerPacket(SimpleFlow.SERVER_GOODBYE, 24).build().steps,
             new FlowBuilder()
                 .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, 25)
                 .withClientPacket(SimpleFlow.CLIENT_REQUEST).build().steps
