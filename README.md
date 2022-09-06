@@ -85,6 +85,28 @@ Here there is a flow example on how a YAML would look:
 1. *Wireshark* dumps and *tcpdumps* are parsed using multiple port when providing endpoint address using `-a` flag
 	>  Note: if port is provided alonside with the address *E.g: 0.0.0.0:23* only the specified port will be parsed otherwise, all involved ports will be part of the flow.
 1. Client mode also supported
+
+### Include modules
+
+When modularization is important for your flow **include** is the designated tool for the job, take a look to this example:
+```yaml
+- !server { data: 48656C6C6F, port: 23 }
+- !client { data: 48656C6C6F2C2049276D204A6F686E }
+- !include { id: "innerFlow" }
+- !server { data: 427965204A6F686E }
+- !include { id: "2" }
+---
+id: "innerFlow"
+steps:
+  - !server { data: 48656C6C6F204A6F686E, port: 24 }
+  - !client { data: 427965 }
+---
+- !server { data: 427965204A6F686E, port: 25 }
+```
+- Flows are separated by `---` as standardized by YAML syntax to separate documents
+- It is possible to call a flow using either the **id** of the flow or the **index** of the flow (one indexed)
+- Connections opened inside an include will remain there. Therefore consequent packets (after the include) will use a connection defined in main flow.
+	> Looking at the example, the packet between *includes* will use the connection established in port 23.
           
 ## Tips
 
