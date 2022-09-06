@@ -41,18 +41,17 @@ public class ReloadServiceTest {
   private CountDownLatch registerWatchServiceLock;
 
   @BeforeEach
-  public void setup() throws IOException {
+  public void setup() {
     MockitoAnnotations.initMocks(this);
     registerWatchServiceLock = new CountDownLatch(1);
     setupConfigFile();
     this.reloadService = new ReloadService(service, configFile, buildFlowProvider());
   }
 
-  private void setupConfigFile() throws IOException {
+  private void setupConfigFile() {
     File file = Files.newTemporaryFile();
     configFile = new FileMock(file.getAbsolutePath(),
         registerWatchServiceLock);
-    writeInConfigFile(Collections.singletonList("TEST"));
   }
 
   private void writeInConfigFile(List<String> lines) throws IOException {
