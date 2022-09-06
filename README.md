@@ -88,9 +88,7 @@ Here there is a flow example on how a YAML would look:
 
 ### Include modules
 
-When modularization is important for your flow
-
-Include is the designated tool for the job, take a look to this example:
+When modularization is important for your flow **include** is the designated tool for the job, take a look to this example:
 ```yaml
 - !server { data: 48656C6C6F, port: 23 }
 - !client { data: 48656C6C6F2C2049276D204A6F686E }
