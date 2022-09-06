@@ -15,10 +15,10 @@ public class FlowTest {
       throws IOException {
     Flow flow = Flow.fromWiresharkJsonDump(TestResource.getResourceFile("/serverOnLocalPort.json"),
         "127.0.0.1:3469");
-    assertEquals(flow.getSteps(), Arrays.asList(
+    assertEquals(Arrays.asList(
         new ReceivePacketStep("43485F4643457C31307C0D0A"),
-        new SendPacketStep("5245535F4643457C547C332E302E3135352E313731FF", 0)
-    ));
+        new SendPacketStep("5245535F4643457C547C332E302E3135352E313731FF", 25, 3469)
+    ), flow.getSteps());
   }
 
   @Test
@@ -34,5 +34,23 @@ public class FlowTest {
         .withServerPacket(SimpleFlow.SERVER_GOODBYE, 25)
         .build();
     assertEquals(flow, expected);
+  }
+
+  @Test
+  public void shouldGetServerAndClientStepsWhenLoadParallelFlow() throws FileNotFoundException {
+    Flow flow = Flow.fromYml(TestResource.getResourceFile("/parallel.yaml"));
+    Flow expected = new FlowBuilder()
+        .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, 23)
+        .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+        .withParallelPacket(Arrays.asList(
+            new FlowBuilder()
+                .withServerPacket(SimpleFlow.SERVER_RESPONSE, 24)
+                .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+                .withServerPacket(SimpleFlow.SERVER_GOODBYE, 24).build().steps,
+            new FlowBuilder()
+                .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, 25)
+                .withClientPacket(SimpleFlow.CLIENT_REQUEST).build().steps
+        )).build();
+    assertEquals(expected, flow);
   }
 }

@@ -1,17 +1,19 @@
 package us.abstracta.wiresham;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 /**
  * A step in a flow to be executed for a given packet.
  */
-public abstract class PacketStep {
+public abstract class PacketStep implements FlowStep {
 
   //Public due to deserialization
   public int port;
   protected Packet data;
- 
+
   protected PacketStep() {
   }
 
@@ -32,8 +34,9 @@ public abstract class PacketStep {
     this.data = Packet.fromHexDump(data);
   }
 
-  public Integer getPort() {
-    return port == 0 ? null : port;
+  @Override
+  public List<Integer> getPorts() {
+    return port != 0 ? Collections.singletonList(port) : Collections.emptyList();
   }
 
   public void setPort(int port) {

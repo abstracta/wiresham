@@ -1,9 +1,14 @@
 package us.abstracta.wiresham;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -16,7 +21,7 @@ public class ConnectionFlowDriver implements Runnable {
   private static final Logger LOG = LoggerFactory.getLogger(ConnectionFlowDriver.class);
 
   private final FlowConnectionProvider connectionProvider;
-  private final Queue<PacketStep> flowSteps;
+  private final Queue<FlowStep> flowSteps;
   private final int portArgument;
 
   public ConnectionFlowDriver(FlowConnectionProvider connectionProvider,
@@ -29,36 +34,14 @@ public class ConnectionFlowDriver implements Runnable {
   @Override
   public void run() {
     try {
-      PacketStep first = flowSteps.peek();
-      int previousPort = (first == null || first.getPort() == null)
-          ? portArgument : first.getPort();
+      FlowStep first = flowSteps.peek();
+      int previousPort = (first == null || first.getPorts().isEmpty())
+          ? portArgument : first.getPorts().get(0);
       LOG.info("starting new flow on {}", previousPort);
-      while (!flowSteps.isEmpty()) {
-        PacketStep step = flowSteps.poll();
-        if (step.getPort() != null && step.getPort() != previousPort) {
-          LOG.info("changing to connections on port {}", step.getPort());
-          previousPort = step.getPort();
-        }
-        FlowConnection flowConnection = connectionProvider.get(previousPort);
-        step.process(flowConnection);
-      }
+      processSteps(flowSteps, previousPort, connectionProvider);
       LOG.info("flow completed!");
-    } catch (ConnectionClosedException e) {
-      LOG.info("Connection closed by client while waiting for client packet");
-      if (e.getDiscardedPacket().getBytes().length > 0) {
-        LOG.debug("Discarding client packet {}", e.getDiscardedPacket(), e);
-      }
-    } catch (IOException e) {
-      if (e.getMessage().contains("Socket is closed")) {
-        LOG.trace("Received expected exception when server socket has been closed", e);
-      } else {
-        LOG.error("Problem while processing requests from client. Closing connection.", e);
-      }
-    } catch (InterruptedException e) {
-      LOG.trace("The thread has been interrupted", e);
-      Thread.currentThread().interrupt();
-    } catch (ExecutionException e) {
-      LOG.error("Problem while waiting for socket to be created", e);
+    } catch (IOException | InterruptedException | ExecutionException e) {
+      handleProcessStepExceptions(e);
     } finally {
       try {
         closeFlowConnections();
@@ -67,6 +50,79 @@ public class ConnectionFlowDriver implements Runnable {
       }
       MDC.clear();
     }
+  }
+
+  private static void processSteps(Queue<FlowStep> flowSteps, int previousPort,
+      FlowConnectionProvider connectionProvider)
+      throws ExecutionException, InterruptedException, IOException {
+    while (!flowSteps.isEmpty()) {
+      FlowStep step = flowSteps.poll();
+      if (step instanceof ParallelFlowStep) {
+        LOG.info("starting parallel execution");
+        processParallelSteps((ParallelFlowStep) step, previousPort, connectionProvider);
+        continue;
+      }
+      PacketStep packetStep = (PacketStep) step;
+      if (!packetStep.getPorts().isEmpty() && packetStep.getPorts().get(0) != previousPort) {
+        LOG.info("changing to connections on port {}", packetStep.getPorts().get(0));
+        previousPort = packetStep.getPorts().get(0);
+      }
+      FlowConnection flowConnection = connectionProvider.get(previousPort);
+      packetStep.process(flowConnection);
+    }
+  }
+
+  private static void processParallelSteps(ParallelFlowStep step, int previousPort,
+      FlowConnectionProvider connectionProvider) {
+    List<List<FlowStep>> forks = step.getForks();
+    ExecutorService parallelStepsExecutor = Executors.newFixedThreadPool(forks.size());
+    List<Future<?>> parallelFutures = new ArrayList<>();
+    for (List<FlowStep> parallelStep : forks) {
+      Queue<FlowStep> steps = new LinkedList<>(parallelStep);
+      parallelFutures.add(parallelStepsExecutor.submit(() -> {
+        try {
+          processSteps(steps, previousPort, connectionProvider);
+        } catch (ExecutionException | InterruptedException | IOException e) {
+          handleProcessStepExceptions(e);
+        }
+      }));
+    }
+    joinParallelExecutions(parallelStepsExecutor, parallelFutures);
+  }
+
+  private static void handleProcessStepExceptions(Exception e) {
+    if (e.getClass().equals(IOException.class)) {
+      if (e.getMessage().contains("Socket is closed")) {
+        LOG.trace("Received expected exception when server socket has been closed", e);
+      } else {
+        LOG.error("Problem while processing requests from client. Closing connection.", e);
+      }
+    } else if (e.getClass().equals(InterruptedException.class)) {
+      LOG.trace("The thread has been interrupted", e);
+      Thread.currentThread().interrupt();
+    } else if (e.getClass().equals(ExecutionException.class)) {
+      LOG.error("Problem while waiting for socket to be created", e);
+    } else if (e.getClass().equals(ConnectionClosedException.class)) {
+      LOG.info("Connection closed by client while waiting for client packet");
+      ConnectionClosedException ex = (ConnectionClosedException) e;
+      if (ex.getDiscardedPacket().getBytes().length > 0) {
+        LOG.debug("Discarding client packet {}", ex.getDiscardedPacket(), e);
+      }
+    }
+  }
+
+  private static void joinParallelExecutions(ExecutorService parallelStepsExecutor,
+      List<Future<?>> parallelFutures) {
+    parallelStepsExecutor.shutdown();
+    parallelFutures.forEach(future -> {
+      try {
+        future.get();
+      } catch (InterruptedException e) {
+        LOG.warn("Parallel steps where interrupted", e);
+      } catch (ExecutionException e) {
+        LOG.trace("Unexpected exception when waiting for parallel threads to end", e);
+      }
+    });
   }
 
   public FlowConnectionProvider getConnectionProvider() {

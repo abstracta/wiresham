@@ -41,18 +41,17 @@ public class ReloadServiceTest {
   private CountDownLatch registerWatchServiceLock;
 
   @BeforeEach
-  public void setup() throws IOException {
+  public void setup() {
     MockitoAnnotations.initMocks(this);
     registerWatchServiceLock = new CountDownLatch(1);
     setupConfigFile();
     this.reloadService = new ReloadService(service, configFile, buildFlowProvider());
   }
 
-  private void setupConfigFile() throws IOException {
+  private void setupConfigFile() {
     File file = Files.newTemporaryFile();
-    configFile = new FileMock(file.getName(),
+    configFile = new FileMock(file.getAbsolutePath(),
         registerWatchServiceLock);
-    writeInConfigFile(Collections.singletonList("TEST"));
   }
 
   private void writeInConfigFile(List<String> lines) throws IOException {
@@ -83,7 +82,7 @@ public class ReloadServiceTest {
   private List<String> getAllSimpleFlowLines() throws FileNotFoundException {
     return SimpleFlow.getFlow().getSteps().stream()
         .map(p -> "- !" + (p instanceof ReceivePacketStep ? "client" : "server") + " {data: "
-            + p.data + "}")
+            + ((PacketStep) p).data + "}")
         .collect(Collectors.toList());
   }
 
@@ -234,7 +233,7 @@ public class ReloadServiceTest {
 
     @Override
     public Path resolveSibling(Path other) {
-      return path.resolveSibling(other);
+      return new PathMock(path.resolveSibling(other), lock);
     }
 
     @Override
@@ -255,8 +254,16 @@ public class ReloadServiceTest {
     }
 
     @Override
+    public String toString() {
+      return path.toString();
+    }
+
+    @Override
     public boolean equals(Object obj) {
-      return path.equals(obj);
+      if (!(obj instanceof Path)) {
+        return false;
+      }
+      return path.toAbsolutePath().toString().equals(((Path) obj).toAbsolutePath().toString());
     }
   }
 

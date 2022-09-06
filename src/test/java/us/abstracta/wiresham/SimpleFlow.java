@@ -25,7 +25,7 @@ public abstract class SimpleFlow {
 
   public static class FlowBuilder {
 
-    private final List<PacketStep> steps = new ArrayList<>();
+    private final List<FlowStep> steps = new ArrayList<>();
 
     public FlowBuilder withServerPacket(String data, int port) {
       steps.add(new SendPacketStep(encodeTextToHex(data), 0, port));
@@ -39,6 +39,11 @@ public abstract class SimpleFlow {
 
     public FlowBuilder withClientPacket(String data) {
       steps.add(new ReceivePacketStep(encodeTextToHex(data)));
+      return this;
+    }
+
+    public FlowBuilder withParallelPacket(List<List<FlowStep>> parallelSteps) {
+      steps.add(new ParallelFlowStep(parallelSteps));
       return this;
     }
 

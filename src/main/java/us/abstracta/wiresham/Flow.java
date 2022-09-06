@@ -14,6 +14,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -33,6 +34,7 @@ import org.yaml.snakeyaml.constructor.Constructor;
 import org.yaml.snakeyaml.introspector.Property;
 import org.yaml.snakeyaml.nodes.Node;
 import org.yaml.snakeyaml.nodes.NodeTuple;
+import org.yaml.snakeyaml.nodes.SequenceNode;
 import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 
@@ -44,7 +46,8 @@ public class Flow {
   private static final Map<String, Class<?>> YAML_TAGS = ImmutableMap.<String, Class<?>>builder()
       .put("!server", SendPacketStep.class)
       .put("!client", ReceivePacketStep.class)
-      .put("!include", IncludePacketStep.class)
+      .put("!include", IncludeFlowStep.class)
+      .put("!parallel:", ParallelFlowStep.class)
       .build();
 
   private static final JsonPointer WIRESHARK_LAYERS_PATH = JsonPointer.valueOf("/_source/layers");
@@ -59,23 +62,23 @@ public class Flow {
       .valueOf("/frame/frame.time_delta_displayed");
   private static final String IP_PORT_SEPARATOR = ":";
 
-  public List<PacketStep> steps;
+  public List<FlowStep> steps;
   public String id;
 
   public Flow() {
   }
 
   @VisibleForTesting
-  public Flow(List<PacketStep> steps) {
+  public Flow(List<FlowStep> steps) {
     this.steps = steps;
   }
 
-  public Flow(List<PacketStep> steps, String id) {
+  public Flow(List<FlowStep> steps, String id) {
     this(steps);
     this.id = id;
   }
 
-  public void setSteps(List<PacketStep> steps) {
+  public void setSteps(List<FlowStep> steps) {
     this.steps = steps;
   }
 
@@ -87,7 +90,7 @@ public class Flow {
     this.id = id;
   }
 
-  public List<PacketStep> getSteps() {
+  public List<FlowStep> getSteps() {
     return steps;
   }
 
@@ -127,7 +130,7 @@ public class Flow {
   }
 
   public static Flow fromPcap(File file, String serverAddress, String filter) throws IOException {
-    List<PacketStep> steps = new ArrayList<>();
+    List<FlowStep> steps = new ArrayList<>();
     try (PcapHandle pcap = Pcaps.openOffline(file.getAbsolutePath())) {
       if (filter != null) {
         pcap.setFilter(filter, BpfCompileMode.OPTIMIZE);
@@ -175,21 +178,25 @@ public class Flow {
     return new Flow(recursivelySolveSteps(flows.get(0), flows));
   }
 
-  private static List<PacketStep> recursivelySolveSteps(Flow flow, List<Flow> flows) {
-    List<PacketStep> steps = new ArrayList<>();
+  private static List<FlowStep> recursivelySolveSteps(Flow flow, List<Flow> flows) {
+    List<FlowStep> steps = new ArrayList<>();
     int lastPort = 0;
-    for (PacketStep step : flow.steps) {
-      if (step instanceof IncludePacketStep) {
+    for (FlowStep step : flow.steps) {
+      if (step instanceof IncludeFlowStep) {
         steps.addAll(
-            recursivelySolveSteps(findFlow(((IncludePacketStep) step).getId(), flows), flows));
+            recursivelySolveSteps(findFlow(((IncludeFlowStep) step).getId(), flows), flows));
+        continue;
+      } else if (step instanceof ParallelFlowStep) {
+        steps.add(resolveParallelSteps((ParallelFlowStep) step, flows));
         continue;
       }
-      if (step.getPort() != null) {
-        lastPort = step.getPort();
+      PacketStep packetStep = (PacketStep) step;
+      if (!packetStep.getPorts().isEmpty()) {
+        lastPort = packetStep.getPorts().get(0);
       } else {
-        step.setPort(lastPort);
+        packetStep.setPort(lastPort);
       }
-      steps.add(step);
+      steps.add(packetStep);
     }
     return steps;
   }
@@ -201,8 +208,16 @@ public class Flow {
         .orElseGet(() -> flows.get(Integer.parseInt(id)));
   }
 
+  private static FlowStep resolveParallelSteps(ParallelFlowStep step, List<Flow> flows) {
+    ParallelFlowStep ret = new ParallelFlowStep();
+    for (List<FlowStep> parallelStep : step.getForks()) {
+      ret.addParallelStep(recursivelySolveSteps(new Flow(parallelStep), flows));
+    }
+    return ret;
+  }
+
   public static Flow fromYmlStream(InputStream stream) {
-    List<PacketStep> packets = new Yaml(buildYamlConstructor())
+    List<FlowStep> packets = new Yaml(buildYamlConstructor())
         .load(stream);
     return new Flow(packets);
   }
@@ -244,8 +259,9 @@ public class Flow {
 
   public Flow reversed() {
     return new Flow(steps.stream()
-        .map(s -> s instanceof SendPacketStep ? new ReceivePacketStep(s.data.toString())
-            : new SendPacketStep(s.data.toString(), 0))
+        .map(s -> s instanceof SendPacketStep ? new ReceivePacketStep(
+            ((PacketStep) s).data.toString())
+            : new SendPacketStep(((PacketStep) s).data.toString(), 0))
         .collect(Collectors.toList()));
   }
 
@@ -272,8 +288,8 @@ public class Flow {
 
   public List<Integer> getPorts() {
     return steps.stream()
-        .filter(p -> p instanceof SendPacketStep)
-        .map(PacketStep::getPort)
+        .map(FlowStep::getPorts)
+        .flatMap(Collection::stream)
         .distinct()
         .filter(Objects::nonNull)
         .collect(Collectors.toList());
@@ -285,9 +301,17 @@ public class Flow {
 
     @Override
     protected Object constructObject(Node node) {
+      if (node.getTag().getValue().equals("!parallel")) {
+        List<Node> sequenceNodes = ((SequenceNode) node).getValue();
+        List<List<FlowStep>> parallelSteps = new ArrayList<>();
+        for (Node sequenceNode : sequenceNodes) {
+          parallelSteps.add((List<FlowStep>) super.constructObject(sequenceNode));
+        }
+        return new ParallelFlowStep(parallelSteps);
+      }
       Object o = super.constructObject(node);
       if (o instanceof List) {
-        return new Flow((List<PacketStep>) o);
+        return new Flow((List<FlowStep>) o);
       } else if (o instanceof Map) {
         Map<String, Object> map = (Map<String, Object>) o;
         String id = (String) map.get("id");
