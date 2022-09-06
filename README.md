@@ -105,9 +105,30 @@ steps:
 ```
 - Flows are separated by `---` as standardized by YAML syntax to separate documents
 - It is possible to call a flow using either the **id** of the flow or the **index** of the flow (one indexed)
-- Connections opened inside an include will remain there. Therefore consequent packets (after the include) will use a connection defined in main flow.
+- Connections opened inside an include will remain there. Therefore, consequent packets (after the include) will use a connection defined in main flow.
 	> Looking at the example, the packet between *includes* will use the connection established in port 23.
-          
+
+### Parallel execution
+
+Multiple flows which needs to run in parallel?
+
+Parallel is the feature for the scenario:
+```yaml
+- !server { data: 48656C6C6F, port: 23}
+- !client { data: 48656C6C6F2C2049276D204A6F686E }
+- !parallel
+    -
+      - !server { data: 48656C6C6F204A6F686E, port: 24 }
+      - !client { data: 48656C6C6F2C2049276D204A6F686E }
+      - !server { data: 427965204A6F686E }
+    - 
+      - !server { data: 48656C6C6F, port: 25}
+      - !client { data: 48656C6C6F2C2049276D204A6F686E }
+```
+- Parallel flows must have different port numbers specified
+- **Include** is supported inside parallel in order to modularize or reuse an existent flow
+- Main flow won't continue until all parallel flows have ended
+
 ## Tips
 
 #### How to filter by port while using packet dissections
