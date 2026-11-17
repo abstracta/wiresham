@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import us.abstracta.wiresham.SimpleFlow.FlowBuilder;
 
 public class VirtualTcpClientTest {
 
@@ -68,6 +69,33 @@ public class VirtualTcpClientTest {
   public void shouldGetNoRequestWhenSendExpectedMessage() throws Exception {
     socket.send(SimpleFlow.UNEXPECTED_MESSAGE);
     assertThrows(TimeoutException.class, () -> socket.awaitReceiveAnything());
+  }
+
+  @Test
+  public void shouldConnectToEveryPortWhenFlowWithMultiplePorts() throws Exception {
+    client.stop(TIMEOUT_MILLIS);
+    try (ServerSocket secondServerSocket = new ServerSocket(0)) {
+      serverSocket.setSoTimeout((int) TIMEOUT_MILLIS);
+      secondServerSocket.setSoTimeout((int) TIMEOUT_MILLIS);
+      Flow flow = new FlowBuilder()
+          .withServerPacket(SimpleFlow.SERVER_WELCOME_MESSAGE, serverSocket.getLocalPort())
+          .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+          .withServerPacket(SimpleFlow.SERVER_RESPONSE, secondServerSocket.getLocalPort())
+          .withClientPacket(SimpleFlow.CLIENT_REQUEST)
+          .build();
+      client.setFlow(flow.reversed());
+      client.run();
+      try (PlainTextSocket first = new PlainTextSocket(serverSocket.accept(), TIMEOUT_MILLIS)) {
+        first.send(SimpleFlow.SERVER_WELCOME_MESSAGE);
+        first.awaitReceive(SimpleFlow.CLIENT_REQUEST);
+        first.send(SimpleFlow.SERVER_RESPONSE);
+        try (PlainTextSocket second = new PlainTextSocket(secondServerSocket.accept(),
+            TIMEOUT_MILLIS)) {
+          second.send(SimpleFlow.SERVER_RESPONSE);
+          second.awaitReceive(SimpleFlow.CLIENT_REQUEST);
+        }
+      }
+    }
   }
 
   @Test

@@ -17,6 +17,7 @@ import java.nio.file.WatchEvent.Kind;
 import java.nio.file.WatchEvent.Modifier;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.nio.file.attribute.FileTime;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -50,8 +51,8 @@ public class ReloadServiceTest {
 
   private void setupConfigFile() throws IOException {
     File file = Files.newTemporaryFile();
-    configFile = new FileMock(file.getName(),
-        registerWatchServiceLock);
+    file.deleteOnExit();
+    configFile = new FileMock(file.getAbsolutePath(), registerWatchServiceLock);
     writeInConfigFile(Collections.singletonList("TEST"));
   }
 
@@ -77,7 +78,14 @@ public class ReloadServiceTest {
     boolean await = registerWatchServiceLock.await(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
     assertThat(await).isTrue();
     writeInConfigFile(getAllSimpleFlowLines());
-    verify(service, timeout(TIMEOUT_MILLIS)).setFlow(SimpleFlow.getFlow());
+    /*
+     Polling based watch services (like the one used in macOS) detect changes by comparing last
+     modified times, which in some JVMs are truncated to seconds. This makes sure the change is
+     detected even when the file is modified in the same second it was created.
+     */
+    java.nio.file.Files.setLastModifiedTime(configFile.originalPath(),
+        FileTime.fromMillis(System.currentTimeMillis() + 5000));
+    verify(service, timeout(TIMEOUT_MILLIS).atLeastOnce()).setFlow(SimpleFlow.getFlow());
   }
 
   private List<String> getAllSimpleFlowLines() throws FileNotFoundException {

@@ -1,10 +1,12 @@
 package us.abstracta.wiresham;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Collections;
 import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -83,6 +85,66 @@ public class VirtualTcpServiceTest {
         sslContext.getSocketFactory().createSocket("localhost", availablePort),
         TIMEOUT_MILLIS);
     mainClientSocket.awaitReceive(SimpleFlow.SERVER_WELCOME_MESSAGE);
+  }
+
+  @Test
+  public void shouldReleasePortWhenStop() throws Exception {
+    int port = service.getPort();
+    mainClientSocket.close();
+    service.stop(TIMEOUT_MILLIS);
+    assertThrows(IOException.class, () -> new Socket("localhost", port).close());
+    new ServerSocket(port).close();
+  }
+
+  @Test
+  public void shouldGetExpectedResponseWhenRestartOnSamePort() throws Exception {
+    int port = service.getPort();
+    mainClientSocket.close();
+    service.stop(TIMEOUT_MILLIS);
+    service.start();
+    mainClientSocket = new PlainTextSocket(new Socket("localhost", port), TIMEOUT_MILLIS);
+    mainClientSocket.awaitReceive(SimpleFlow.SERVER_WELCOME_MESSAGE);
+  }
+
+  @Test
+  public void shouldGetExpectedResponseWhenStartWithDynamicPort() throws Exception {
+    mainClientSocket.close();
+    service.stop(TIMEOUT_MILLIS);
+    service.setPortArgument(VirtualTcpService.DYNAMIC_PORT);
+    service.start();
+    assertEquals(Collections.singletonList(service.getPort()), service.getPorts());
+    mainClientSocket = new PlainTextSocket(new Socket("localhost", service.getPort()),
+        TIMEOUT_MILLIS);
+    mainClientSocket.awaitReceive(SimpleFlow.SERVER_WELCOME_MESSAGE);
+    mainClientSocket.send(SimpleFlow.CLIENT_REQUEST);
+    mainClientSocket.awaitReceive(SimpleFlow.SERVER_RESPONSE);
+  }
+
+  @Test
+  public void shouldThrowIllegalStateWhenGetPortOfStoppedService() throws Exception {
+    mainClientSocket.close();
+    service.stop(TIMEOUT_MILLIS);
+    assertThrows(IllegalStateException.class, service::getPort);
+  }
+
+  @Test
+  public void shouldGetExpectedResponseWhenExpectedPacketIsBiggerThanReadBuffer()
+      throws Exception {
+    mainClientSocket.close();
+    service.stop(TIMEOUT_MILLIS);
+    StringBuilder bigRequest = new StringBuilder();
+    for (int i = 0; i < VirtualTcpService.DEFAULT_READ_BUFFER_SIZE + 500; i++) {
+      bigRequest.append((char) ('a' + i % 26));
+    }
+    service.setFlow(new FlowBuilder()
+        .withClientPacket(bigRequest.toString())
+        .withServerPacket(SimpleFlow.SERVER_RESPONSE)
+        .build());
+    service.start();
+    mainClientSocket = new PlainTextSocket(new Socket("localhost", service.getPort()),
+        TIMEOUT_MILLIS);
+    mainClientSocket.send(bigRequest.toString());
+    mainClientSocket.awaitReceive(SimpleFlow.SERVER_RESPONSE);
   }
 
   @Test

@@ -3,6 +3,7 @@ package us.abstracta.wiresham;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,14 +50,16 @@ public class ConnectionFlowDriver implements Runnable {
         LOG.debug("Discarding client packet {}", e.getDiscardedPacket(), e);
       }
     } catch (IOException e) {
-      if (e.getMessage().contains("Socket is closed")) {
-        LOG.trace("Received expected exception when server socket has been closed", e);
+      if (e.getMessage() != null && e.getMessage().toLowerCase().contains("closed")) {
+        LOG.trace("Received expected exception when socket has been closed", e);
       } else {
         LOG.error("Problem while processing requests from client. Closing connection.", e);
       }
     } catch (InterruptedException e) {
       LOG.trace("The thread has been interrupted", e);
       Thread.currentThread().interrupt();
+    } catch (CancellationException e) {
+      LOG.trace("Connection has been cancelled since the service stopped", e);
     } catch (ExecutionException e) {
       LOG.error("Problem while waiting for socket to be created", e);
     } finally {

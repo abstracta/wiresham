@@ -6,27 +6,39 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.BaseEncoding;
+import com.google.common.net.InetAddresses;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStreamWriter;
+import java.io.UncheckedIOException;
+import java.io.Writer;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 import org.pcap4j.core.BpfProgram.BpfCompileMode;
 import org.pcap4j.core.NotOpenException;
 import org.pcap4j.core.PcapHandle;
 import org.pcap4j.core.PcapNativeException;
 import org.pcap4j.core.Pcaps;
 import org.pcap4j.packet.IpV4Packet;
+import org.pcap4j.packet.IpV6Packet;
 import org.pcap4j.packet.TcpPacket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -40,6 +52,8 @@ import org.yaml.snakeyaml.representer.Representer;
  */
 public class Flow {
 
+  private static final Logger LOG = LoggerFactory.getLogger(Flow.class);
+
   private static final Map<String, Class<?>> YAML_TAGS = ImmutableMap.<String, Class<?>>builder()
       .put("!server", SendPacketStep.class)
       .put("!client", ReceivePacketStep.class)
@@ -49,6 +63,8 @@ public class Flow {
   private static final JsonPointer WIRESHARK_TCP_PAYLOAD_PATH = JsonPointer
       .valueOf("/tcp/tcp.payload");
   private static final JsonPointer WIRESHARK_SOURCE_IP_PATH = JsonPointer.valueOf("/ip/ip.src");
+  private static final JsonPointer WIRESHARK_SOURCE_IPV6_PATH = JsonPointer
+      .valueOf("/ipv6/ipv6.src");
   private static final JsonPointer WIRESHARK_SOURCE_PORT_PATH = JsonPointer
       .valueOf("/tcp/tcp.srcport");
   private static final JsonPointer WIRESHARK_DESTINE_PORT_PATH = JsonPointer
@@ -77,34 +93,83 @@ public class Flow {
       throws IOException {
     ObjectMapper mapper = new ObjectMapper();
     JsonNode json = mapper.readTree(file);
-    return new Flow(StreamSupport.stream(json.spliterator(), false)
-        .filter(packet -> !packet.at(WIRESHARK_LAYERS_PATH).at(WIRESHARK_TCP_PAYLOAD_PATH).asText()
-            .isEmpty())
-        .map(packet -> {
-          JsonNode layers = packet.at(WIRESHARK_LAYERS_PATH);
-          String sourceIp = layers.at(WIRESHARK_SOURCE_IP_PATH).asText();
-          String sourcePort = layers.at(WIRESHARK_SOURCE_PORT_PATH).asText();
-          String hexDump = layers.at(WIRESHARK_TCP_PAYLOAD_PATH).asText()
-              .replace(":", "");
-          long timeDeltaMillis =
-              Long.parseLong(layers.at(WIRESHARK_TIME_DELTA_PATH).asText().replace(".", ""))
-                  / 1000000;
-          return isServerAddress(sourceIp, sourcePort, serverAddress) ? new SendPacketStep(
-              hexDump, timeDeltaMillis, Integer.parseInt(sourcePort))
-              : new ReceivePacketStep(hexDump,
-                  Integer.parseInt(layers.at(WIRESHARK_DESTINE_PORT_PATH).asText()));
-        })
-        .collect(Collectors.toList()));
+    List<PacketStep> steps = new ArrayList<>();
+    Set<String> sourceAddresses = new LinkedHashSet<>();
+    for (JsonNode packet : json) {
+      JsonNode layers = packet.at(WIRESHARK_LAYERS_PATH);
+      String payload = layers.at(WIRESHARK_TCP_PAYLOAD_PATH).asText();
+      if (payload.isEmpty()) {
+        continue;
+      }
+      String sourceIp = layers.at(WIRESHARK_SOURCE_IP_PATH).asText();
+      if (sourceIp.isEmpty()) {
+        sourceIp = layers.at(WIRESHARK_SOURCE_IPV6_PATH).asText();
+      }
+      String sourcePort = layers.at(WIRESHARK_SOURCE_PORT_PATH).asText();
+      sourceAddresses.add(formatAddress(sourceIp, sourcePort));
+      String hexDump = payload.replace(":", "");
+      if (isServerAddress(sourceIp, sourcePort, serverAddress)) {
+        long timeDeltaMillis = parseSecondsAsMillis(
+            layers.at(WIRESHARK_TIME_DELTA_PATH).asText());
+        steps.add(new SendPacketStep(hexDump, timeDeltaMillis, Integer.parseInt(sourcePort)));
+      } else {
+        steps.add(new ReceivePacketStep(hexDump,
+            Integer.parseInt(layers.at(WIRESHARK_DESTINE_PORT_PATH).asText())));
+      }
+    }
+    warnIfNoServerSteps(steps, file, serverAddress, sourceAddresses);
+    return new Flow(steps);
   }
 
+  private static String formatAddress(String ip, String port) {
+    return (ip.contains(IP_PORT_SEPARATOR) ? "[" + ip + "]" : ip) + IP_PORT_SEPARATOR + port;
+  }
+
+  private static long parseSecondsAsMillis(String seconds) {
+    return seconds.isEmpty() ? 0 : new BigDecimal(seconds).movePointRight(3).longValue();
+  }
+
+  /*
+   Supported formats for server address are: ip, ipv4:port and [ipv6]:port.
+   */
   private static boolean isServerAddress(String sourceIp, String sourcePort, String serverAddress) {
-    return serverAddress.contains(IP_PORT_SEPARATOR)
-        && (sourceIp + IP_PORT_SEPARATOR + sourcePort).equals(serverAddress)
-        || serverAddress.equals(sourceIp);
+    String serverIp = serverAddress;
+    String serverPort = null;
+    int portSeparatorPos = serverAddress.lastIndexOf(IP_PORT_SEPARATOR);
+    if (serverAddress.startsWith("[") && serverAddress.contains("]")) {
+      int ipEndPos = serverAddress.indexOf(']');
+      serverIp = serverAddress.substring(1, ipEndPos);
+      serverPort = portSeparatorPos > ipEndPos ? serverAddress.substring(portSeparatorPos + 1)
+          : null;
+    } else if (portSeparatorPos >= 0
+        && portSeparatorPos == serverAddress.indexOf(IP_PORT_SEPARATOR)) {
+      serverIp = serverAddress.substring(0, portSeparatorPos);
+      serverPort = serverAddress.substring(portSeparatorPos + 1);
+    }
+    return isSameIp(serverIp, sourceIp) && (serverPort == null || serverPort.equals(sourcePort));
+  }
+
+  private static boolean isSameIp(String ip, String otherIp) {
+    if (ip.equals(otherIp)) {
+      return true;
+    }
+    // the same IPv6 address may be written in different ways (eg: ::1 and 0:0:0:0:0:0:0:1)
+    return InetAddresses.isInetAddress(ip) && InetAddresses.isInetAddress(otherIp)
+        && InetAddresses.forString(ip).equals(InetAddresses.forString(otherIp));
+  }
+
+  private static void warnIfNoServerSteps(List<PacketStep> steps, File file, String serverAddress,
+      Set<String> sourceAddresses) {
+    if (steps.stream().noneMatch(s -> s instanceof SendPacketStep)) {
+      LOG.warn("No packet in {} is sent from server address {}, so every packet is considered "
+              + "as sent by the client. Packets with data in the file are sent from: {}",
+          file, serverAddress, sourceAddresses);
+    }
   }
 
   public static Flow fromPcap(File file, String serverAddress, String filter) throws IOException {
     List<PacketStep> steps = new ArrayList<>();
+    Set<String> sourceAddresses = new LinkedHashSet<>();
     try (PcapHandle pcap = Pcaps.openOffline(file.getAbsolutePath())) {
       if (filter != null) {
         pcap.setFilter(filter, BpfCompileMode.OPTIMIZE);
@@ -114,61 +179,95 @@ public class Flow {
       // so we use getNextPacketEx which throws an EOFException when reached end of file
       while (true) {
         org.pcap4j.packet.Packet p = pcap.getNextPacketEx();
-        if (!p.contains(TcpPacket.class)) {
+        String sourceIp = getSourceIp(p);
+        TcpPacket tcpPacket = p.get(TcpPacket.class);
+        if (tcpPacket == null || sourceIp == null) {
           continue;
         }
-        org.pcap4j.packet.Packet payload = p.get(TcpPacket.class).getPayload();
+        org.pcap4j.packet.Packet payload = tcpPacket.getPayload();
         if (payload == null) {
           continue;
         }
-        IpV4Packet ipV4Packet = p.get(IpV4Packet.class);
-        String sourceIp = ipV4Packet.getHeader().getSrcAddr().getHostAddress();
-        int sourcePort = ipV4Packet.getPayload().get(TcpPacket.class).getHeader().getSrcPort()
-            .valueAsInt();
+        int sourcePort = tcpPacket.getHeader().getSrcPort().valueAsInt();
+        sourceAddresses.add(formatAddress(sourceIp, String.valueOf(sourcePort)));
         String hexDump = BaseEncoding.base16().encode(payload.getRawData());
         long timeMillis = pcap.getTimestamp().getTime();
         long timeDeltaMillis = lastTimeMillis > 0 ? timeMillis - lastTimeMillis : 0;
         lastTimeMillis = timeMillis;
         steps.add(isServerAddress(sourceIp, String.valueOf(sourcePort), serverAddress)
             ? new SendPacketStep(hexDump, timeDeltaMillis, sourcePort)
-            : new ReceivePacketStep(hexDump,
-                ipV4Packet.getPayload().get(TcpPacket.class).getHeader().getDstPort()
-                    .valueAsInt()));
+            : new ReceivePacketStep(hexDump, tcpPacket.getHeader().getDstPort().valueAsInt()));
       }
     } catch (EOFException e) {
       //just ignore if we reached end of file.
     } catch (TimeoutException | PcapNativeException | NotOpenException e) {
       throw new IOException("Problem reading file " + file, e);
     }
+    warnIfNoServerSteps(steps, file, serverAddress, sourceAddresses);
     return new Flow(steps);
   }
 
+  private static String getSourceIp(org.pcap4j.packet.Packet packet) {
+    IpV4Packet ipV4Packet = packet.get(IpV4Packet.class);
+    if (ipV4Packet != null) {
+      return ipV4Packet.getHeader().getSrcAddr().getHostAddress();
+    }
+    IpV6Packet ipV6Packet = packet.get(IpV6Packet.class);
+    return ipV6Packet != null ? ipV6Packet.getHeader().getSrcAddr().getHostAddress() : null;
+  }
+
   public static Flow fromYml(File ymlFile) throws FileNotFoundException {
-    List<PacketStep> packets = new Yaml(buildYamlConstructor())
-        .load(new FileInputStream(ymlFile));
-    return new Flow(packets);
+    try (InputStream stream = new FileInputStream(ymlFile)) {
+      return fromYmlStream(stream);
+    } catch (FileNotFoundException e) {
+      throw e;
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   public static Flow fromYmlStream(InputStream stream) {
-    List<PacketStep> packets = new Yaml(buildYamlConstructor())
-        .load(stream);
-    return new Flow(packets);
+    Object loaded = new Yaml(buildYamlConstructor()).load(stream);
+    if (!(loaded instanceof List)) {
+      throw new IllegalArgumentException(
+          "A flow has to be a list of !server and !client steps");
+    }
+    List<PacketStep> steps = new ArrayList<>();
+    for (Object step : (List<?>) loaded) {
+      if (!(step instanceof PacketStep)) {
+        throw new IllegalArgumentException(
+            "Flow steps have to be tagged with !server or !client, but got: " + step);
+      }
+      if (((PacketStep) step).data == null) {
+        throw new IllegalArgumentException(
+            "Flow step number " + (steps.size() + 1) + " has no data");
+      }
+      steps.add((PacketStep) step);
+    }
+    return new Flow(steps);
   }
 
   private static Constructor buildYamlConstructor() {
-    Constructor constructor = new Constructor();
+    // SnakeYAML default loader options reject global tags (like !!java.net.URL), so only the
+    // types registered here can be instantiated from a flow file.
+    LoaderOptions options = new LoaderOptions();
+    // flows generated from big captures can easily exceed the default limit of 3MB
+    options.setCodePointLimit(Integer.MAX_VALUE);
+    Constructor constructor = new Constructor(options);
     YAML_TAGS
         .forEach((tag, clazz) -> constructor.addTypeDescription(new TypeDescription(clazz, tag)));
     return constructor;
   }
 
   public void saveYml(File ymlFile) throws IOException {
-    new Yaml(buildYamlRepresenter())
-        .dump(steps, new FileWriter(ymlFile));
+    try (Writer writer = new OutputStreamWriter(Files.newOutputStream(ymlFile.toPath()),
+        StandardCharsets.UTF_8)) {
+      new Yaml(buildYamlRepresenter()).dump(steps, writer);
+    }
   }
 
   private static Representer buildYamlRepresenter() {
-    Representer representer = new Representer() {
+    Representer representer = new Representer(new DumperOptions()) {
       private int previousPort = 0;
 
       @Override
@@ -190,11 +289,43 @@ public class Flow {
     return representer;
   }
 
+  /**
+   * Builds the flow as seen from the other end of the connection: sent packets become expected
+   * ones and vice versa.
+   * <p>
+   * Ports are kept only when the flow involves more than one port, so that a single port flow can
+   * be replayed against any target port. Delays are not kept, since they are recorded for server
+   * packets only.
+   *
+   * @return the reversed flow.
+   */
   public Flow reversed() {
+    boolean multiplePorts = steps.stream()
+        .map(PacketStep::getPort)
+        .filter(Objects::nonNull)
+        .distinct()
+        .count() > 1;
     return new Flow(steps.stream()
-        .map(s -> s instanceof SendPacketStep ? new ReceivePacketStep(s.data.toString())
-            : new SendPacketStep(s.data.toString(), 0))
+        .map(s -> {
+          int port = multiplePorts && s.getPort() != null ? s.getPort() : 0;
+          return s instanceof SendPacketStep
+              ? (PacketStep) new ReceivePacketStep(s.data.toString(), port)
+              : new SendPacketStep(s.data.toString(), 0, port);
+        })
         .collect(Collectors.toList()));
+  }
+
+  /**
+   * Gets the read buffer size needed to receive every expected packet of the flow.
+   *
+   * @param minimumSize the size to use when no expected packet is bigger than it.
+   * @return the biggest value between the given size and the size of the biggest expected packet.
+   */
+  public int getRequiredReadBufferSize(int minimumSize) {
+    return steps.stream()
+        .filter(s -> s instanceof ReceivePacketStep)
+        .mapToInt(s -> s.data.getBytes().length)
+        .reduce(minimumSize, Math::max);
   }
 
   @Override

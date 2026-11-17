@@ -2,10 +2,13 @@ package us.abstracta.wiresham;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -36,13 +39,14 @@ public class VirtualTcpService {
   private static final Logger LOG = LoggerFactory.getLogger(VirtualTcpService.class);
 
   private int portArgument = DYNAMIC_PORT;
-  private Flow flow;
+  private volatile Flow flow;
   private boolean sslEnabled;
   private SSLContext sslContext;
   private int readBufferSize = DEFAULT_READ_BUFFER_SIZE;
   private int maxConnections = DEFAULT_MAX_CONNECTION_COUNT;
-  private boolean stopped = false;
+  private volatile boolean stopped = false;
   private final Set<ConnectionFlowDriver> connectionDrivers = new HashSet<>();
+  private final List<ServerSocket> serverSockets = new ArrayList<>();
   private ExecutorService clientExecutorService;
   private ExecutorService portExecutorService;
 
@@ -51,15 +55,35 @@ public class VirtualTcpService {
   }
 
   public void setFlow(Flow flow) {
-    this.flow = flow;
-    Optional<PacketStep> bigPacketStep = flow.getSteps().stream()
-        .filter(s -> s instanceof ReceivePacketStep && s.data.getBytes().length > readBufferSize)
-        .findAny();
-    if (bigPacketStep.isPresent()) {
-      throw new IllegalArgumentException(String.format(
-          "Read buffer size of %d bytes is not enough for receiving expected packet from client "
-              + "with %s", readBufferSize, bigPacketStep.get().data));
+    this.flow = Objects.requireNonNull(flow, "flow must not be null");
+  }
+
+  /**
+   * Gets the port where the service is listening for connections.
+   * <p>
+   * This is particularly useful when the service is started with {@link #DYNAMIC_PORT}.
+   *
+   * @return the first port bound by the service.
+   * @throws IllegalStateException when the service has not been started.
+   */
+  public synchronized int getPort() {
+    if (serverSockets.isEmpty()) {
+      throw new IllegalStateException("The service is not started");
     }
+    return serverSockets.get(0).getLocalPort();
+  }
+
+  /**
+   * Gets all the ports where the service is listening for connections.
+   *
+   * @return the ports bound by the service, or an empty list when the service is not started.
+   */
+  public synchronized List<Integer> getPorts() {
+    List<Integer> ports = new ArrayList<>();
+    for (ServerSocket serverSocket : serverSockets) {
+      ports.add(serverSocket.getLocalPort());
+    }
+    return ports;
   }
 
   /**
@@ -88,18 +112,34 @@ public class VirtualTcpService {
     int portCount = flow.getPortCount();
     portExecutorService = Executors.newFixedThreadPool(portCount == 0 ? 1 : portCount);
     clientExecutorService = Executors.newFixedThreadPool(maxConnections);
-    startServerPorts();
+    try {
+      startServerPorts();
+    } catch (IOException | RuntimeException e) {
+      // avoid leaving ports bound and threads running when some port can't be bound
+      try {
+        stop(0);
+      } catch (InterruptedException interruption) {
+        Thread.currentThread().interrupt();
+      }
+      throw e;
+    }
   }
 
   public void startServerPorts() throws IOException {
-    for (Integer port : getPorts()) {
-      ServerSocket serverSocket = buildSocket(port);
+    for (Integer configuredPort : getConfiguredPorts()) {
+      ServerSocket serverSocket = buildSocket(configuredPort);
+      synchronized (this) {
+        serverSockets.add(serverSocket);
+      }
+      int port = serverSocket.getLocalPort();
       LOG.info("Waiting for connections on {}", port);
       portExecutorService.execute(() -> {
-        while (!stopped) {
+        while (!stopped && !serverSocket.isClosed()) {
           try {
+            // buffer size is calculated for each connection since the flow may be reloaded
+            Socket socket = serverSocket.accept();
             assignFlowConnectionToConnectionDriver(port,
-                new FlowConnection(serverSocket.accept(), readBufferSize));
+                new FlowConnection(socket, flow.getRequiredReadBufferSize(readBufferSize)));
           } catch (IOException e) {
             handleSocketIOException(e);
           }
@@ -108,7 +148,7 @@ public class VirtualTcpService {
     }
   }
 
-  private List<Integer> getPorts() {
+  private List<Integer> getConfiguredPorts() {
     return flow.getPorts().isEmpty()
         ? Collections.singletonList(portArgument) : flow.getPorts();
   }
@@ -133,7 +173,7 @@ public class VirtualTcpService {
     }
     FlowConnectionProvider connectionProvider = buildFlowConnectionProvider();
     connectionProvider.init(flow.getPorts(), flowConnection);
-    addClient(new ConnectionFlowDriver(connectionProvider, flow, portArgument));
+    addClient(new ConnectionFlowDriver(connectionProvider, flow, port));
   }
 
   private synchronized void addClient(ConnectionFlowDriver connectionDriver) {
@@ -147,8 +187,11 @@ public class VirtualTcpService {
     }
     connectionDrivers.add(connectionDriver);
     clientExecutorService.submit(() -> {
-      connectionDriver.run();
-      removeClient(connectionDriver);
+      try {
+        connectionDriver.run();
+      } finally {
+        removeClient(connectionDriver);
+      }
     });
   }
 
@@ -167,6 +210,14 @@ public class VirtualTcpService {
   public void stop(long timeoutMillis) throws InterruptedException {
     synchronized (this) {
       stopped = true;
+      for (ServerSocket serverSocket : serverSockets) {
+        try {
+          serverSocket.close();
+        } catch (IOException e) {
+          LOG.error("Problem closing server socket on port {}", serverSocket.getLocalPort(), e);
+        }
+      }
+      serverSockets.clear();
       connectionDrivers.forEach(c -> {
         try {
           c.closeFlowConnections();
@@ -174,6 +225,13 @@ public class VirtualTcpService {
           LOG.error("Problem closing connection ", e);
         }
       });
+      connectionDrivers.clear();
+    }
+    if (portExecutorService != null) {
+      portExecutorService.shutdown();
+    }
+    if (clientExecutorService == null) {
+      return;
     }
     clientExecutorService.shutdown();
     if (!clientExecutorService.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS)) {
@@ -186,8 +244,13 @@ public class VirtualTcpService {
       public final Map<Integer, CompletableFuture<FlowConnection>> map = new ConcurrentHashMap<>();
 
       @Override
-      public FlowConnection get(int port) throws ExecutionException, InterruptedException {
-        return map.get(port).get();
+      public FlowConnection get(int port)
+          throws ExecutionException, InterruptedException, IOException {
+        CompletableFuture<FlowConnection> connection = map.get(port);
+        if (connection == null) {
+          throw new IOException("Connection on port " + port + " is closed");
+        }
+        return connection.get();
       }
 
       @Override
@@ -203,12 +266,16 @@ public class VirtualTcpService {
 
       @Override
       public void assignFlowConnection(int port, FlowConnection flowConnection) {
-        map.get(port).complete(flowConnection);
+        CompletableFuture<FlowConnection> connection = map.get(port);
+        if (connection != null) {
+          connection.complete(flowConnection);
+        }
       }
 
       @Override
       public boolean requiresFlowConnection(int port) {
-        return !map.get(port).isDone();
+        CompletableFuture<FlowConnection> connection = map.get(port);
+        return connection != null && !connection.isDone();
       }
 
       @Override
@@ -222,7 +289,7 @@ public class VirtualTcpService {
             // getting them. Therefore, task won't be; running, interrupted or timeout.
             throw new RuntimeException(e);
           } catch (CancellationException e) {
-            LOG.error("Connection canceled since service stopped", e);
+            LOG.trace("Connection canceled since service stopped", e);
           }
         }
         map.clear();

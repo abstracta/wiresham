@@ -38,6 +38,12 @@ The general use case for the tool takes following steps:
           E.g.: `java -jar wiresham-standalone.jar -p 2324 -a 0.0.0.0 traffic.pcap`
           
           > Run `java -jar wiresham-standalone.jar -h` to get usage instructions and help.
+
+          > When `-p` is not specified, a free port is used and logged at startup.
+
+          > The configuration file is watched for changes, and new connections use the latest version of it. Use `-n` (`--no-auto-reload`) to disable this behavior.
+
+          > If the server address specified with `-a` does not match any packet of the capture, Wiresham logs a warning listing the addresses found in it. For IPv6 addresses use either the address alone (`-a ::1`) or the `[address]:port` format (`-a [::1]:23`).
       1. Same as previous one but start Wiresham in standalong mode to emulate a client application (instead of a service application):
     
         E.g.: `java -jar wiresham-standalone.jar -t 0.0.0.0:23 -a 0.0.0.0 wireshark-dump.json`
@@ -54,11 +60,22 @@ The general use case for the tool takes following steps:
           <dependency>
            <groupId>us.abstracta</groupId>
            <artifactId>wiresham</artifactId>
-           <version>0.1</version>
+           <version>LATEST_VERSION</version>
           </dependency>
           ```
           
-          > Check what is the latest version in [releases](https://github.com/abstracta/wiresham/releases)
+          > Replace `LATEST_VERSION` with the latest version listed in [releases](https://github.com/abstracta/wiresham/releases)
+
+          When no port is set, `VirtualTcpService` listens on a free port, which can be obtained with `getPort()` after starting it:
+
+          ```java
+          VirtualTcpService service = new VirtualTcpService();
+          service.setFlow(Flow.fromYml(new File("reduced-dump.yml")));
+          service.start();
+          int port = service.getPort();
+          // connect the client under test to the port and run assertions
+          service.stop(10000);
+          ```
           
           > Check [VirtualTcpServiceTest](src/test/java/us/abstracta/wiresham/VirtualTcpServiceTest.java) and [VirtualTcpClientTest](src/test/java/us/abstracta/wiresham/VirtualTcpClientTest.java) for simple and raw examples on how to use the classes.
 
@@ -84,7 +101,7 @@ Here there is a flow example on how a YAML would look:
 1. When a port is defined, subsequent packets until another port is defined will use the mentioned port without having to explicitly define it (as shown in the example)
 1. *Wireshark* dumps and *tcpdumps* are parsed using multiple port when providing endpoint address using `-a` flag
 	>  Note: if port is provided alonside with the address *E.g: 0.0.0.0:23* only the specified port will be parsed otherwise, all involved ports will be part of the flow.
-1. Client mode also supported
+1. Client mode is also supported. When the flow involves more than one port, the virtual client connects to the ports defined in the flow on the host specified with `-t`. When the flow involves only one port, the port specified with `-t` is used.
           
 ## Tips
 
