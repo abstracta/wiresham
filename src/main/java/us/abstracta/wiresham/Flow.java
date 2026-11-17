@@ -179,11 +179,12 @@ public class Flow {
       // so we use getNextPacketEx which throws an EOFException when reached end of file
       while (true) {
         org.pcap4j.packet.Packet p = pcap.getNextPacketEx();
-        String sourceIp = getSourceIp(p);
         TcpPacket tcpPacket = p.get(TcpPacket.class);
-        if (tcpPacket == null || sourceIp == null) {
+        if (tcpPacket == null) {
           continue;
         }
+        // pcap4j only builds TCP packets on top of IP ones, so there is always a source IP
+        String sourceIp = getSourceIp(p);
         org.pcap4j.packet.Packet payload = tcpPacket.getPayload();
         if (payload == null) {
           continue;
