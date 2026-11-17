@@ -229,6 +229,8 @@ public class VirtualTcpService {
     }
     if (portExecutorService != null) {
       portExecutorService.shutdown();
+      // a port is not released until its accept thread ends, so wait to allow an immediate restart
+      portExecutorService.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS);
     }
     if (clientExecutorService == null) {
       return;
