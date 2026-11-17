@@ -35,8 +35,7 @@ public class ReloadService implements Runnable {
 
   @Override
   public void run() {
-    try {
-      WatchService watchService = FileSystems.getDefault().newWatchService();
+    try (WatchService watchService = FileSystems.getDefault().newWatchService()) {
       registerWatchService(watchService);
       while (true) {
         WatchKey take = processTake(watchService);
@@ -48,12 +47,13 @@ public class ReloadService implements Runnable {
     } catch (IOException e) {
       LOG.error("Error while retrieving watch service", e);
     } catch (InterruptedException e) {
-      LOG.error("Error while waiting for WatchService event key", e);
+      LOG.trace("Reload service stopped", e);
+      Thread.currentThread().interrupt();
     }
   }
 
   private void registerWatchService(WatchService watchService) {
-    Path watchServicePath = configFile.toPath().getParent();
+    Path watchServicePath = configFile.toPath().toAbsolutePath().getParent();
     try {
       watchServicePath.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY);
     } catch (IOException e) {
@@ -75,11 +75,25 @@ public class ReloadService implements Runnable {
     if (pollEvent.kind().equals(StandardWatchEventKinds.ENTRY_MODIFY)
         && pollEvent.context() instanceof Path) {
 
-      Path p = (Path) pollEvent.context();
-      if (configFile.toPath().resolveSibling(p).equals(configFile.toPath())) {
-        LOG.info("File was modified, new connections will now use last changes");
-        service.setFlow(loadFlowProvider.get());
+      // the event context is the path of the modified file relative to the watched directory
+      Path modified = (Path) pollEvent.context();
+      if (modified.getFileName().toString().equals(configFile.getName())) {
+        reloadFlow();
       }
+    }
+  }
+
+  private void reloadFlow() {
+    try {
+      Flow flow = loadFlowProvider.get();
+      if (flow == null) {
+        LOG.error("Could not reload {}. Keeping previous flow.", configFile.getAbsolutePath());
+        return;
+      }
+      service.setFlow(flow);
+      LOG.info("File was modified, new connections will now use last changes");
+    } catch (RuntimeException e) {
+      LOG.error("Could not reload {}. Keeping previous flow.", configFile.getAbsolutePath(), e);
     }
   }
 
@@ -91,7 +105,7 @@ public class ReloadService implements Runnable {
     if (reloadExecutorService.isShutdown() && reloadExecutorService.isTerminated()) {
       return;
     }
-    reloadExecutorService.shutdown();
+    reloadExecutorService.shutdownNow();
     reloadExecutorService.awaitTermination(VirtualTcpServiceMain.STOP_TIMEOUT_MILLIS,
         TimeUnit.MILLISECONDS);
   }

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.Socket;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,7 +33,7 @@ public class VirtualTcpClient {
   private SSLContext sslContext;
 
   public void setFlow(Flow flow) {
-    this.flow = flow;
+    this.flow = Objects.requireNonNull(flow, "flow must not be null");
   }
 
   public void setServerAddress(String serverAddress) {
@@ -72,7 +73,8 @@ public class VirtualTcpClient {
       @Override
       public FlowConnection get(int port) throws IOException {
         if (map.get(port) == null) {
-          map.put(port, new FlowConnection(buildSocket(port), readBufferSize));
+          map.put(port, new FlowConnection(buildSocket(port),
+              flow.getRequiredReadBufferSize(readBufferSize)));
         }
         return map.get(port);
       }

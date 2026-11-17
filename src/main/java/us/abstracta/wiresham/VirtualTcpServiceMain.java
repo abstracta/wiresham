@@ -3,11 +3,12 @@ package us.abstracta.wiresham;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 import javax.net.ssl.SSLContext;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineException;
@@ -74,33 +75,41 @@ public class VirtualTcpServiceMain {
   @Option(name = "-h", aliases = "--help", usage = "Show usage information", help = true)
   private boolean displayHelp;
 
+  @Option(name = "-n", aliases = "--no-auto-reload", usage =
+      "Disables auto reload. By default the config file is watched for changes, and when it "
+          + "changes all new connections use the new version of the file. Established "
+          + "connections keep using the previous version and don't suffer any interruption.")
+  private boolean autoReloadDisabled;
+
   @Option(name = "-r", aliases = "--auto-reload", usage =
-      "When enabled, will listen for changes in dump file, when the file has changes all new "
-          + "connections from now on, will use the new version of the dump. "
-          + "Established connections will persist using previous dump and won't suffer any "
-          + "interruption. Default: enabled")
+      "Deprecated: auto reload is enabled by default and this option has no effect. Use "
+          + "--no-auto-reload to disable it.")
   private boolean autoReload;
 
   @Argument(metaVar = "config file", required = true,
       usage = "Configuration file from where to read packets information")
   private File configFile;
 
-  private final Supplier<Flow> loadFlowProvider = () -> {
-    try {
-      if (serverAddress != null) {
-        if (configFile.getName().toLowerCase().endsWith(".json")) {
-          return Flow.fromWiresharkJsonDump(configFile, serverAddress);
-        } else {
-          return Flow.fromPcap(configFile, serverAddress, pcapFilter);
-        }
-      } else {
-        return Flow.fromYml(configFile);
-      }
-    } catch (IOException e) {
-      System.err.println(e.getMessage());
-      return null;
+  private Flow loadFlow() throws IOException {
+    if (!configFile.isFile()) {
+      throw new FileNotFoundException("File " + configFile + " does not exist");
     }
-  };
+    if (serverAddress == null) {
+      return Flow.fromYml(configFile);
+    } else if (configFile.getName().toLowerCase().endsWith(".json")) {
+      return Flow.fromWiresharkJsonDump(configFile, serverAddress);
+    } else {
+      return Flow.fromPcap(configFile, serverAddress, pcapFilter);
+    }
+  }
+
+  private Flow reloadFlow() {
+    try {
+      return loadFlow();
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
 
   public static void main(String[] args) throws IOException, InterruptedException {
     VirtualTcpServiceMain main = new VirtualTcpServiceMain();
@@ -115,6 +124,10 @@ public class VirtualTcpServiceMain {
     } catch (CmdLineException e) {
       System.err.println(e.getMessage());
       printHelp(parser, System.err);
+      System.exit(1);
+    } catch (FlowLoadException e) {
+      System.err.println(e.getMessage());
+      System.exit(1);
     }
   }
 
@@ -136,10 +149,28 @@ public class VirtualTcpServiceMain {
         + command + " -t 127.0.0.1:2324 login-invalid-creds.yml");
   }
 
+  private static class FlowLoadException extends RuntimeException {
+
+    private FlowLoadException(String message, Throwable cause) {
+      super(message, cause);
+    }
+
+  }
+
   private void run() throws IOException, InterruptedException {
     Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
     root.setLevel(superVerbose ? Level.TRACE : verbose ? Level.DEBUG : Level.INFO);
-    Flow flow = loadFlowProvider.get();
+    Flow flow;
+    try {
+      flow = loadFlow();
+    } catch (IOException | RuntimeException e) {
+      throw new FlowLoadException("Could not load flow from " + configFile + ": " + e.getMessage(),
+          e);
+    }
+    if (autoReload) {
+      System.err.println("Option --auto-reload is deprecated and has no effect: auto reload is "
+          + "enabled by default. Use --no-auto-reload to disable it.");
+    }
     if (dumpFile != null) {
       flow.saveYml(dumpFile);
     } else {
@@ -180,8 +211,8 @@ public class VirtualTcpServiceMain {
     service.setMaxConnections(maxConnectionCount);
     service.setFlow(flow);
     ReloadService reloadService = null;
-    if (!autoReload) {
-      reloadService = new ReloadService(service, configFile, loadFlowProvider);
+    if (!autoReloadDisabled) {
+      reloadService = new ReloadService(service, configFile, this::reloadFlow);
       reloadService.start();
     }
     service.start();
