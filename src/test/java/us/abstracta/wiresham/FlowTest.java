@@ -126,7 +126,7 @@ public class FlowTest {
       data.append('A');
     }
     Flow flow = loadYaml("- !server {data: " + data + "}\n");
-    assertThat(flow.getSteps().get(0).data.getBytes()).hasSize(2 * 1024 * 1024);
+    assertThat(flow.getSteps().get(0).getData()).hasSize(4 * 1024 * 1024);
   }
 
   @Test
@@ -135,6 +135,60 @@ public class FlowTest {
     File saved = tempDir.resolve("saved.yaml").toFile();
     flow.saveYml(saved);
     assertThat(Flow.fromYml(saved)).isEqualTo(flow);
+  }
+
+  @Test
+  public void shouldKeepExpressionsWhenLoadYamlWithWildcardsCapturesAndReferences() {
+    Flow flow = loadYaml("- !client {data: '4c4f(?<user>.{8}).'}\n"
+        + "- !server {data: '4f4b${user}', delayMillis: 20}\n"
+        + "- !client {data: 51..}\n");
+    assertThat(flow.getSteps().stream()
+        .map(PacketStep::getData)
+        .collect(Collectors.toList()))
+        .containsExactly("4C4F(?<user>.{8}).", "4F4B${user}", "51..");
+  }
+
+  @Test
+  public void shouldGetSameFlowWhenSaveAndLoadYamlWithWildcardsCapturesAndReferences()
+      throws IOException {
+    Flow flow = new Flow(Arrays.asList(
+        new ReceivePacketStep("4C4F(?<user>.{8}).", SERVER_PORT),
+        new SendPacketStep("4F4B${user}", 20),
+        new ReceivePacketStep(".{2}51")));
+    File saved = tempDir.resolve("expressions.yaml").toFile();
+    flow.saveYml(saved);
+    assertThat(Flow.fromYml(saved)).isEqualTo(flow);
+    assertThat(new String(Files.readAllBytes(saved.toPath()), StandardCharsets.UTF_8))
+        .contains("data: '4C4F(?<user>.{8}).'");
+  }
+
+  @Test
+  public void shouldRejectFlowWhenLoadYamlWithVariableLengthWildcard() {
+    assertThatThrownBy(() -> loadYaml("- !client {data: 4C.*}\n"))
+        .isInstanceOf(RuntimeException.class)
+        .hasStackTraceContaining("Unsupported '*' at position 3");
+  }
+
+  @Test
+  public void shouldRejectFlowWhenServerStepUsesValueNotCapturedByPreviousStep() {
+    assertThatThrownBy(() -> loadYaml("- !server {data: '4F4B${user}'}\n"
+        + "- !client {data: '4C4F(?<user>.{8})'}\n"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("${user}");
+  }
+
+  @Test
+  public void shouldRejectReversedFlowWhenFlowUsesWildcards() {
+    Flow flow = loadYaml("- !client {data: 4C.}\n"
+        + "- !server {data: 4F4B}\n");
+    assertThatThrownBy(flow::reversed)
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  public void shouldUseExpectedPacketSizeWhenGetRequiredReadBufferSizeWithWildcards() {
+    Flow flow = loadYaml("- !client {data: '4C(?<id>.{4000})'}\n");
+    assertThat(flow.getRequiredReadBufferSize(2048)).isEqualTo(4001);
   }
 
 }

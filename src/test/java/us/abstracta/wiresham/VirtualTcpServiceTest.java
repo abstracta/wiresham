@@ -3,9 +3,12 @@ package us.abstracta.wiresham;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.google.common.io.BaseEncoding;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
@@ -194,5 +197,76 @@ public class VirtualTcpServiceTest {
         () -> subordinateClientSocket.awaitReceive(SimpleFlow.SERVER_WELCOME_MESSAGE));
   }
 
+  @Test
+  public void shouldGetCapturedValueWhenSendInputMatchingPatternWithCapture() throws Exception {
+    restartWithFlow(buildLoginFlow());
+    mainClientSocket.send("LOGIN john!");
+    mainClientSocket.awaitReceive("OK john");
+  }
+
+  private Flow buildLoginFlow() {
+    return new Flow(Arrays.asList(
+        new ReceivePacketStep(hex("LOGIN ") + "(?<user>.{4})."),
+        new SendPacketStep(hex("OK ") + "${user}", 0)));
+  }
+
+  private static String hex(String text) {
+    return BaseEncoding.base16().encode(text.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private void restartWithFlow(Flow flow) throws Exception {
+    mainClientSocket.close();
+    service.stop(TIMEOUT_MILLIS);
+    service.setFlow(flow);
+    service.start();
+    mainClientSocket = connect();
+  }
+
+  private PlainTextSocket connect() throws IOException {
+    return new PlainTextSocket(new Socket("localhost", service.getPort()), TIMEOUT_MILLIS);
+  }
+
+  @Test
+  public void shouldGetCapturedValueWhenPatternIsSplitInSeveralPacketsAfterUnexpectedInput()
+      throws Exception {
+    restartWithFlow(buildLoginFlow());
+    mainClientSocket.send("LOGOUT LOG");
+    mainClientSocket.send("IN ma");
+    mainClientSocket.send("ry?");
+    mainClientSocket.awaitReceive("OK mary");
+  }
+
+  @Test
+  public void shouldGetValueOfEachConnectionWhenSeveralConnectionsUseSameCapture()
+      throws Exception {
+    restartWithFlow(buildLoginFlow());
+    mainClientSocket.send("LOGIN john.");
+    mainClientSocket.awaitReceive("OK john");
+    try (PlainTextSocket otherClientSocket = connect()) {
+      otherClientSocket.send("LOGIN anna.");
+      otherClientSocket.awaitReceive("OK anna");
+    }
+  }
+
+  @Test
+  public void shouldGetNoResponseWhenSendInputNotMatchingPatternWithWildcards()
+      throws Exception {
+    restartWithFlow(buildLoginFlow());
+    mainClientSocket.send("LOGOUT john!");
+    assertThrows(TimeoutException.class, () -> mainClientSocket.awaitReceiveAnything());
+  }
+
+  @Test
+  public void shouldGetExpectedResponseWhenExpectedInputOverlapsWithPreviousPartialMatch()
+      throws Exception {
+    restartWithFlow(new Flow(Arrays.asList(
+        new ReceivePacketStep(hex("AAB")),
+        new SendPacketStep(hex("OK"), 0),
+        new ReceivePacketStep(hex("C") + "." + hex("E")),
+        new SendPacketStep(hex("END"), 0))));
+    mainClientSocket.send("AAABCDE");
+    mainClientSocket.awaitReceive("OK");
+    mainClientSocket.awaitReceive("END");
+  }
 
 }

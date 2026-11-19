@@ -102,7 +102,37 @@ Here there is a flow example on how a YAML would look:
 1. *Wireshark* dumps and *tcpdumps* are parsed using multiple port when providing endpoint address using `-a` flag
 	>  Note: if port is provided alonside with the address *E.g: 0.0.0.0:23* only the specified port will be parsed otherwise, all involved ports will be part of the flow.
 1. Client mode is also supported. When the flow involves more than one port, the virtual client connects to the ports defined in the flow on the host specified with `-t`. When the flow involves only one port, the port specified with `-t` is used.
-          
+
+### Wildcards and captured values
+Recorded packets usually include values that change on every execution (session ids, timestamps, user names).
+For such scenarios, the YAML file can be manually edited so the expected client packets accept any value in some bytes, and the server packets reuse the values sent by the client:
+
+```yaml
+- !client {data: '4C4F47494E(?<user>.{8}).'}
+- !server {data: '4F4B${user}', delayMillis: 20}
+```
+
+In the example, the server waits for `LOGIN` (`4C4F47494E`), followed by 8 bytes which are captured as `user` and by one more byte with any value, and then answers `OK` (`4F4B`) followed by the same 8 bytes sent by the client.
+
+The supported syntax is a subset of regular expressions where the unit is the byte instead of the character:
+
+| Syntax | Meaning | Supported in |
+|---|---|---|
+| `4C` | A byte with the given hex value | `!client` and `!server` |
+| `.` | A byte with any value | `!client` |
+| `.{4}` | 4 bytes with any value | `!client` |
+| `(?<name>.{4})` | Captures the received bytes with the given name. It may contain hex bytes, `.` and `.{n}` | `!client` |
+| `${name}` | The bytes previously captured with the given name | `!server` |
+
+**Important considerations:**
+
+1. Only fixed length constructs are supported. Other regular expression constructs (like `*`, `+`, `?`, `|` or `[]`) are rejected when loading the flow.
+1. Steps using `{` or `}` have to be quoted, as in the example, since those characters are part of the YAML syntax. Single quotes are recommended.
+1. Capture names have to start with a letter and contain only letters and digits.
+1. Captured values are kept for each execution of the flow, so each client gets the values it sent. When the flow involves multiple ports, the values are shared by the connections of the same execution.
+1. A `!server` step can only use values captured by previous `!client` steps. When the same name is captured more than once, the last received value is used.
+1. Flows using this syntax are not supported in client mode.
+
 ## Tips
 
 #### How to filter by port while using packet dissections

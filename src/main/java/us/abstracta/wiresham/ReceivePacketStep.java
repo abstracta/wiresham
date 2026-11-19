@@ -1,7 +1,11 @@
 package us.abstracta.wiresham;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,92 +15,132 @@ import org.slf4j.LoggerFactory;
 public class ReceivePacketStep extends PacketStep {
 
   private static final Logger LOG = LoggerFactory.getLogger(ReceivePacketStep.class);
+  private static final int MAX_IGNORED_BYTES_PER_LOG = 1024;
+
+  private PacketPattern pattern;
 
   public ReceivePacketStep() {
   }
 
-  public ReceivePacketStep(String hexDump) {
-    super(hexDump);
+  public ReceivePacketStep(String data) {
+    this(data, 0);
   }
 
-  public ReceivePacketStep(String hexDump, int port) {
-    super(hexDump, port);
+  public ReceivePacketStep(String data, int port) {
+    super(port);
+    this.pattern = PacketPattern.parse(data);
+  }
+
+  @Override
+  public String getData() {
+    return pattern != null ? pattern.toString() : null;
+  }
+
+  /**
+   * Sets the content of the packet to wait for.
+   *
+   * @param data hex dump of the expected packet, which may include {@code .} for any byte,
+   * {@code .{n}} for any n bytes and {@code (?<name>...)} to capture the received bytes with a
+   * name.
+   */
+  @Override
+  public void setData(String data) {
+    this.pattern = PacketPattern.parse(data);
+  }
+
+  Set<String> captureNames() {
+    return pattern != null ? pattern.getCaptureNames() : Collections.emptySet();
+  }
+
+  boolean usesWildcards() {
+    return pattern != null && !pattern.isLiteral();
+  }
+
+  int expectedLength() {
+    return pattern != null ? pattern.length() : 0;
   }
 
   @Override
   public void process(FlowConnection flowConnection) throws IOException {
-    ByteBuffer dataBuffer = ByteBuffer.wrap(data.getBytes());
-    LOG.debug("Waiting for {}", data);
-    boolean receivedExpected = false;
-    while (!receivedExpected) {
-      ByteBuffer readBuffer = flowConnection.read();
-      int foundPos = findDataInBuffer(dataBuffer, readBuffer);
-      if (foundPos != -1) {
-        if (foundPos != 0 && LOG.isTraceEnabled()) {
-          LOG.trace("ignoring received {}  before expected",
-              Packet.fromBytes(readBuffer.array(), 0, foundPos));
-        }
-        LOG.debug("received expected {}", data);
-        readBuffer.compact();
-        readBuffer.flip();
-        receivedExpected = true;
-      } else if (readBuffer.limit() == readBuffer.capacity()) {
-        int markedPosition = getMarkedPosition(readBuffer);
-        if (markedPosition != -1) {
-          int relativePos = readBuffer.position() - markedPosition + 1;
-          readBuffer.compact();
-          readBuffer.flip();
-          readBuffer.position(1);
-          readBuffer.mark();
-          readBuffer.position(relativePos);
-        } else {
-          if (LOG.isTraceEnabled()) {
-            LOG.trace("ignoring received {} while waiting for {}",
-                Packet.fromBytes(readBuffer.array(), 0, readBuffer.limit()), data);
-          }
-          readBuffer.clear();
-          readBuffer.limit(0);
-        }
-      }
-    }
+    process(flowConnection, new FlowContext());
   }
 
-  private int findDataInBuffer(ByteBuffer dataBuffer, ByteBuffer readBuffer) {
-    if (LOG.isTraceEnabled()) {
-      LOG.trace("Searching for {} from {} in {} from {}", data, dataBuffer.position(),
-          Packet.fromBytes(readBuffer.array(), 0, readBuffer.limit()), readBuffer.position());
+  @Override
+  public void process(FlowConnection flowConnection, FlowContext context) throws IOException {
+    LOG.debug("Waiting for {}", pattern);
+    int size = pattern.length();
+    if (size == 0) {
+      return;
     }
-    while (dataBuffer.hasRemaining() && readBuffer.hasRemaining()) {
-      if (readBuffer.get() != dataBuffer.get()) {
-        if (dataBuffer.position() != 1) {
-          LOG.trace("Finish match at {} and {}", readBuffer.position() - 1,
-              dataBuffer.position() - 1);
-          readBuffer.reset();
+    /*
+     The last received bytes are kept in a circular buffer with the size of the expected packet,
+     which is compared with the expected packet each time a byte is received. This allows finding
+     the expected packet at any position of the received bytes.
+     */
+    byte[] window = new byte[size];
+    // ignored bytes are only collected for logging them
+    ByteArrayOutputStream ignored = LOG.isTraceEnabled() ? new ByteArrayOutputStream() : null;
+    long receivedCount = 0;
+    int pos = 0;
+    while (receivedCount < size || !pattern.matches(window, pos)) {
+      byte received = readByte(flowConnection, window, receivedCount, ignored);
+      if (ignored != null && receivedCount >= size) {
+        // the oldest byte is discarded since it is not part of the expected packet
+        ignored.write(window[pos]);
+        if (ignored.size() == MAX_IGNORED_BYTES_PER_LOG) {
+          logIgnored(ignored);
         }
-        dataBuffer.rewind();
-      } else if (dataBuffer.position() == 1) {
-        readBuffer.mark();
-        LOG.trace("Start match at {}", readBuffer.position() - 1);
       }
+      window[pos] = received;
+      receivedCount++;
+      pos = (int) (receivedCount % size);
     }
-    if (!dataBuffer.hasRemaining()) {
-      return getMarkedPosition(readBuffer) - 1;
+    logIgnored(ignored);
+    if (pattern.isLiteral()) {
+      LOG.debug("received expected {}", pattern);
     } else {
-      return -1;
+      LOG.debug("received {} matching expected {}", PacketPattern.copy(window, pos, size),
+          pattern);
+    }
+    for (Map.Entry<String, Packet> capture : pattern.capture(window, pos).entrySet()) {
+      LOG.debug("captured {} as {}", capture.getValue(), capture.getKey());
+      context.capture(capture.getKey(), capture.getValue());
     }
   }
 
-  private int getMarkedPosition(ByteBuffer readBuffer) {
-    int position = readBuffer.position();
-    readBuffer.reset();
-    int markedPosition = readBuffer.position();
-    readBuffer.position(position);
-    return markedPosition;
+  private void logIgnored(ByteArrayOutputStream ignored) {
+    if (ignored == null || ignored.size() == 0) {
+      return;
+    }
+    LOG.trace("ignoring received {} while waiting for {}",
+        Packet.fromBytes(ignored.toByteArray(), 0, ignored.size()), pattern);
+    ignored.reset();
+  }
+
+  private byte readByte(FlowConnection flowConnection, byte[] window, long receivedCount,
+      ByteArrayOutputStream ignored) throws IOException {
+    ByteBuffer readBuffer;
+    try {
+      readBuffer = flowConnection.read();
+    } catch (ConnectionClosedException e) {
+      logIgnored(ignored);
+      // the bytes which may be the start of the expected packet are reported as discarded
+      int pendingCount = (int) Math.min(receivedCount, window.length);
+      throw new ConnectionClosedException(
+          PacketPattern.copy(window, receivedCount - pendingCount, pendingCount));
+    }
+    byte ret = readBuffer.get();
+    if (!readBuffer.hasRemaining()) {
+      // leave the buffer empty, so next read from the connection uses all of its capacity
+      readBuffer.clear();
+      readBuffer.limit(0);
+    }
+    return ret;
   }
 
   @Override
   public String toString() {
-    return "client: " + data;
+    return "client: " + pattern;
   }
 
 }

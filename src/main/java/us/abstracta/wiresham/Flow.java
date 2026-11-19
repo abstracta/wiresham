@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -77,7 +78,26 @@ public class Flow {
 
   @VisibleForTesting
   public Flow(List<PacketStep> steps) {
+    checkReferences(steps);
     this.steps = steps;
+  }
+
+  private static void checkReferences(List<PacketStep> steps) {
+    Set<String> captures = new HashSet<>();
+    int stepNumber = 1;
+    for (PacketStep step : steps) {
+      if (step instanceof ReceivePacketStep) {
+        captures.addAll(((ReceivePacketStep) step).captureNames());
+      } else if (step instanceof SendPacketStep) {
+        for (String reference : ((SendPacketStep) step).references()) {
+          if (!captures.contains(reference)) {
+            throw new IllegalArgumentException("Flow step number " + stepNumber + " uses ${"
+                + reference + "}, which is not captured by any previous !client step");
+          }
+        }
+      }
+      stepNumber++;
+    }
   }
 
   public List<PacketStep> getSteps() {
@@ -239,7 +259,7 @@ public class Flow {
         throw new IllegalArgumentException(
             "Flow steps have to be tagged with !server or !client, but got: " + step);
       }
-      if (((PacketStep) step).data == null) {
+      if (((PacketStep) step).getData() == null) {
         throw new IllegalArgumentException(
             "Flow step number " + (steps.size() + 1) + " has no data");
       }
@@ -299,8 +319,14 @@ public class Flow {
    * packets only.
    *
    * @return the reversed flow.
+   * @throws IllegalArgumentException when the flow uses wildcards, captures or references, since
+   * there is no way of knowing what to send for them.
    */
   public Flow reversed() {
+    if (steps.stream().anyMatch(Flow::usesExpressions)) {
+      throw new IllegalArgumentException(
+          "Flows with wildcards, captures or references can't be used in client mode");
+    }
     boolean multiplePorts = steps.stream()
         .map(PacketStep::getPort)
         .filter(Objects::nonNull)
@@ -310,10 +336,17 @@ public class Flow {
         .map(s -> {
           int port = multiplePorts && s.getPort() != null ? s.getPort() : 0;
           return s instanceof SendPacketStep
-              ? (PacketStep) new ReceivePacketStep(s.data.toString(), port)
-              : new SendPacketStep(s.data.toString(), 0, port);
+              ? (PacketStep) new ReceivePacketStep(s.getData(), port)
+              : new SendPacketStep(s.getData(), 0, port);
         })
         .collect(Collectors.toList()));
+  }
+
+  private static boolean usesExpressions(PacketStep step) {
+    if (step instanceof ReceivePacketStep) {
+      return ((ReceivePacketStep) step).usesWildcards();
+    }
+    return step instanceof SendPacketStep && !((SendPacketStep) step).references().isEmpty();
   }
 
   /**
@@ -325,7 +358,7 @@ public class Flow {
   public int getRequiredReadBufferSize(int minimumSize) {
     return steps.stream()
         .filter(s -> s instanceof ReceivePacketStep)
-        .mapToInt(s -> s.data.getBytes().length)
+        .mapToInt(s -> ((ReceivePacketStep) s).expectedLength())
         .reduce(minimumSize, Math::max);
   }
 
