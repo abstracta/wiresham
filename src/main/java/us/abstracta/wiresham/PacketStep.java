@@ -10,13 +10,12 @@ public abstract class PacketStep {
 
   //Public due to deserialization
   public int port;
-  protected Packet data;
- 
+
   protected PacketStep() {
   }
 
   protected PacketStep(String data) {
-    this.data = Packet.fromHexDump(data);
+    setData(data);
   }
 
   protected PacketStep(String data, int port) {
@@ -24,13 +23,14 @@ public abstract class PacketStep {
     this.port = port;
   }
 
-  public String getData() {
-    return data.toString();
-  }
+  /**
+   * Gets the content of the packet as specified in the flow.
+   *
+   * @return the content of the packet, or null if it has not been set.
+   */
+  public abstract String getData();
 
-  public void setData(String data) {
-    this.data = Packet.fromHexDump(data);
-  }
+  public abstract void setData(String data);
 
   public Integer getPort() {
     return port == 0 ? null : port;
@@ -43,6 +43,20 @@ public abstract class PacketStep {
   public abstract void process(FlowConnection flowConnection)
       throws IOException, InterruptedException;
 
+  /**
+   * Processes the step using the state of the execution of the flow.
+   *
+   * @param flowConnection connection to use for sending or receiving the packet.
+   * @param context state of the execution of the flow, which includes the values captured by
+   * previous steps. Steps add to it the values they capture.
+   * @throws IOException when there is some problem with the connection.
+   * @throws InterruptedException when the thread is interrupted while processing the step.
+   */
+  public void process(FlowConnection flowConnection, FlowContext context)
+      throws IOException, InterruptedException {
+    process(flowConnection);
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -52,12 +66,12 @@ public abstract class PacketStep {
       return false;
     }
     PacketStep that = (PacketStep) o;
-    return data.equals(that.data);
+    return Objects.equals(getData(), that.getData());
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(data);
+    return Objects.hash(getData());
   }
 
 }

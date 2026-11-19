@@ -91,7 +91,7 @@ public class ReloadServiceTest {
   private List<String> getAllSimpleFlowLines() throws FileNotFoundException {
     return SimpleFlow.getFlow().getSteps().stream()
         .map(p -> "- !" + (p instanceof ReceivePacketStep ? "client" : "server") + " {data: "
-            + p.data + "}")
+            + p.getData() + "}")
         .collect(Collectors.toList());
   }
 
