@@ -68,7 +68,7 @@ public class PacketPatternTest {
   @Test
   public void shouldRejectExpressionWhenUsingUnsupportedConstructs() {
     for (String expression : Arrays.asList("4C*", "4C+", "4C?", ".*", ".+", ".{2,4}", ".{2,}",
-        ".{0}", ".{}", ".{a}", ".{2", "4C{2}", "4C|4D", "[4C4D]", "(4C)", "(?:4C)", "4C)",
+        ".{0}", ".{}", ".{a}", ".{2", ".{16777217}", ".{999999999}", ".{9999999999}", "4C{2}", "4C|4D", "[4C4D]", "(4C)", "(?:4C)", "4C)",
         "(?<a>4C", "(?<a>)", "(?<a>(?<b>4C))", "(?<a>4C)(?<a>4D)", "(?<1a>4C)", "(?<>4C)",
         "(?<a_b>4C)", "4", "4C4", "4G", "4C 4D", "${a}", "\\x4C")) {
       assertThatThrownBy(() -> PacketPattern.parse(expression))

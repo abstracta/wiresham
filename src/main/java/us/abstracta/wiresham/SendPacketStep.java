@@ -15,21 +15,19 @@ public class SendPacketStep extends PacketStep {
   private static final Logger LOG = LoggerFactory.getLogger(SendPacketStep.class);
 
   private long delayMillis;
-  // no initializer since it is set by parent constructor
   private PacketTemplate template;
 
   public SendPacketStep() {
   }
 
-  public SendPacketStep(String hexDump, long delayMillis) {
-    super(hexDump);
-    this.delayMillis = delayMillis;
+  public SendPacketStep(String data, long delayMillis) {
+    this(data, delayMillis, 0);
   }
 
-  public SendPacketStep(String hexDump, long delayMillis, int port) {
-    super(hexDump, port);
+  public SendPacketStep(String data, long delayMillis, int port) {
+    super(port);
+    this.template = PacketTemplate.parse(data);
     this.delayMillis = delayMillis;
-    this.port = port;
   }
 
   public long getDelayMillis() {
@@ -48,8 +46,8 @@ public class SendPacketStep extends PacketStep {
   /**
    * Sets the content of the packet to send.
    *
-   * @param data hex dump of the packet, which may include <code>${name}</code> references to
-   * values captured by previous steps.
+   * @param data hex dump of the packet, which may include {@code ${name}} references to values
+   * captured by previous steps.
    */
   @Override
   public void setData(String data) {

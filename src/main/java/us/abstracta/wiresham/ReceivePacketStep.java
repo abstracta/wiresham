@@ -17,18 +17,18 @@ public class ReceivePacketStep extends PacketStep {
   private static final Logger LOG = LoggerFactory.getLogger(ReceivePacketStep.class);
   private static final int MAX_IGNORED_BYTES_PER_LOG = 1024;
 
-  // no initializer since it is set by parent constructor
   private PacketPattern pattern;
 
   public ReceivePacketStep() {
   }
 
   public ReceivePacketStep(String data) {
-    super(data);
+    this(data, 0);
   }
 
   public ReceivePacketStep(String data, int port) {
-    super(data, port);
+    super(port);
+    this.pattern = PacketPattern.parse(data);
   }
 
   @Override
@@ -39,9 +39,9 @@ public class ReceivePacketStep extends PacketStep {
   /**
    * Sets the content of the packet to wait for.
    *
-   * @param data hex dump of the expected packet, which may include <code>.</code> for any byte,
-   * <code>.{n}</code> for any n bytes and <code>(?&lt;name&gt;...)</code> to capture the received
-   * bytes with a name.
+   * @param data hex dump of the expected packet, which may include {@code .} for any byte,
+   * {@code .{n}} for any n bytes and {@code (?<name>...)} to capture the received bytes with a
+   * name.
    */
   @Override
   public void setData(String data) {

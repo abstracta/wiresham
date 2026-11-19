@@ -10,16 +10,18 @@ import java.util.regex.Pattern;
 /**
  * Expected content of a packet, which may include bytes with any value and named captures.
  *
- * <p>It uses a subset of regular expressions syntax where the unit is the byte: an hex pair is a
- * literal byte, <code>.</code> is any byte, <code>.{n}</code> is any n bytes and
- * <code>(?&lt;name&gt;...)</code> captures the matched bytes with the given name. Only fixed
- * length constructs are supported.
+ * <p>It uses a subset of regular expressions syntax where the unit is the byte: a hex pair is a
+ * literal byte, {@code .} is any byte, {@code .{n}} is any n bytes and {@code (?<name>...)}
+ * captures the matched bytes with the given name. Only fixed length constructs are supported.
  */
 final class PacketPattern {
 
-  static final Pattern CAPTURE_NAME = Pattern.compile("[a-zA-Z][a-zA-Z0-9]*");
   private static final String CAPTURE_START = "(?<";
   private static final Pattern REPETITION = Pattern.compile("[1-9][0-9]{0,8}");
+  // avoids running out of memory due to a typo in a flow
+  private static final int MAX_REPETITION = 16 * 1024 * 1024;
+  private static final String SUPPORTED_SYNTAX = "Only hex bytes, '.', '.{n}' and "
+      + "'(?<name>...)' with hex bytes and '.' inside are supported.";
 
   private final String expression;
   private final byte[] bytes;
@@ -36,14 +38,6 @@ final class PacketPattern {
 
   static PacketPattern parse(String expression) {
     return new Parser(expression).parse();
-  }
-
-  static boolean isHexDigit(char c) {
-    return Character.digit(c, 16) != -1;
-  }
-
-  static int parseHexByte(String text, int pos) {
-    return (Character.digit(text.charAt(pos), 16) << 4) + Character.digit(text.charAt(pos + 1), 16);
   }
 
   int length() {
@@ -133,7 +127,7 @@ final class PacketPattern {
       int startPos = pos;
       int nameEnd = text.indexOf('>', pos);
       String name = nameEnd == -1 ? "" : text.substring(pos + CAPTURE_START.length(), nameEnd);
-      if (!CAPTURE_NAME.matcher(name).matches()) {
+      if (!PacketExpressions.CAPTURE_NAME.matcher(name).matches()) {
         throw buildException("Invalid capture name", startPos);
       }
       if (captures.containsKey(name)) {
@@ -164,11 +158,11 @@ final class PacketPattern {
         int count = parseRepetition();
         wildcards.set(bytes.size(), bytes.size() + count);
         bytes.write(new byte[count], 0, count);
-      } else if (isHexDigit(c)) {
-        if (pos + 1 >= text.length() || !isHexDigit(text.charAt(pos + 1))) {
+      } else if (PacketExpressions.isHexDigit(c)) {
+        if (!PacketExpressions.isHexByte(text, pos)) {
           throw buildException("Incomplete hex byte", pos);
         }
-        bytes.write(parseHexByte(text, pos));
+        bytes.write(PacketExpressions.parseHexByte(text, pos));
         normalized.append(text.substring(pos, pos + 2).toUpperCase());
         pos += 2;
       } else {
@@ -185,22 +179,19 @@ final class PacketPattern {
       if (!REPETITION.matcher(count).matches()) {
         throw buildException("Unsupported repetition", pos);
       }
+      int ret = Integer.parseInt(count);
+      if (ret > MAX_REPETITION) {
+        throw buildException("Repetition bigger than the maximum of " + MAX_REPETITION, pos);
+      }
       pos = end + 1;
       normalized.append('{').append(count).append('}');
-      return Integer.parseInt(count);
+      return ret;
     }
 
     private IllegalArgumentException buildException(String problem, int position) {
-      return new IllegalArgumentException(problem + " at position " + position + " of '"
-          + abbreviate(text) + "'. Only hex bytes, '.', '.{n}' and '(?<name>...)' with hex bytes"
-          + " and '.' inside are supported.");
+      return PacketExpressions.buildException(problem, position, text, SUPPORTED_SYNTAX);
     }
 
-  }
-
-  static String abbreviate(String text) {
-    int maxLength = 80;
-    return text.length() <= maxLength ? text : text.substring(0, maxLength) + "...";
   }
 
 }

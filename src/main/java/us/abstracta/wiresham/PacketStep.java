@@ -14,12 +14,7 @@ public abstract class PacketStep {
   protected PacketStep() {
   }
 
-  protected PacketStep(String data) {
-    setData(data);
-  }
-
-  protected PacketStep(String data, int port) {
-    this(data);
+  protected PacketStep(int port) {
     this.port = port;
   }
 
