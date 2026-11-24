@@ -34,6 +34,8 @@ public class ConnectionFlowDriver implements Runnable {
       int previousPort = (first == null || first.getPort() == null)
           ? portArgument : first.getPort();
       LOG.info("starting new flow on {}", previousPort);
+      // the context is shared by all the connections of the same execution of the flow
+      FlowContext context = new FlowContext();
       while (!flowSteps.isEmpty()) {
         PacketStep step = flowSteps.poll();
         if (step.getPort() != null && step.getPort() != previousPort) {
@@ -41,7 +43,7 @@ public class ConnectionFlowDriver implements Runnable {
           previousPort = step.getPort();
         }
         FlowConnection flowConnection = connectionProvider.get(previousPort);
-        step.process(flowConnection);
+        step.process(flowConnection, context);
       }
       LOG.info("flow completed!");
     } catch (ConnectionClosedException e) {

@@ -2,6 +2,7 @@ package us.abstracta.wiresham;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import com.google.common.base.Throwables;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -160,12 +161,15 @@ public class VirtualTcpServiceMain {
   private void run() throws IOException, InterruptedException {
     Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
     root.setLevel(superVerbose ? Level.TRACE : verbose ? Level.DEBUG : Level.INFO);
+    boolean clientMode = dumpFile == null && targetAddress != null;
     Flow flow;
     try {
-      flow = loadFlow();
+      flow = clientMode ? loadFlow().reversed() : loadFlow();
     } catch (IOException | RuntimeException e) {
-      throw new FlowLoadException("Could not load flow from " + configFile + ": " + e.getMessage(),
-          e);
+      // the root cause is included since it is the one which details problems in steps data
+      Throwable rootCause = Throwables.getRootCause(e);
+      throw new FlowLoadException("Could not load flow from " + configFile + ": " + e.getMessage()
+          + (rootCause == e ? "" : "\nCaused by: " + rootCause.getMessage()), e);
     }
     if (autoReload) {
       System.err.println("Option --auto-reload is deprecated and has no effect: auto reload is "
@@ -174,8 +178,8 @@ public class VirtualTcpServiceMain {
     if (dumpFile != null) {
       flow.saveYml(dumpFile);
     } else {
-      if (targetAddress != null) {
-        runVirtualClient(flow.reversed());
+      if (clientMode) {
+        runVirtualClient(flow);
       } else {
         runVirtualService(flow);
       }

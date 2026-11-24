@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -77,7 +78,19 @@ public class Flow {
 
   @VisibleForTesting
   public Flow(List<PacketStep> steps) {
+    checkVariables(steps);
     this.steps = steps;
+  }
+
+  private static void checkVariables(List<PacketStep> steps) {
+    Set<String> definedVariables = new HashSet<>();
+    for (int i = 0; i < steps.size(); i++) {
+      try {
+        steps.get(i).checkVariables(definedVariables);
+      } catch (IllegalArgumentException e) {
+        throw new IllegalArgumentException("Flow step number " + (i + 1) + " " + e.getMessage());
+      }
+    }
   }
 
   public List<PacketStep> getSteps() {
@@ -239,7 +252,7 @@ public class Flow {
         throw new IllegalArgumentException(
             "Flow steps have to be tagged with !server or !client, but got: " + step);
       }
-      if (((PacketStep) step).data == null) {
+      if (((PacketStep) step).getData() == null) {
         throw new IllegalArgumentException(
             "Flow step number " + (steps.size() + 1) + " has no data");
       }
@@ -299,6 +312,8 @@ public class Flow {
    * packets only.
    *
    * @return the reversed flow.
+   * @throws IllegalArgumentException when the flow uses wildcards, captures or references, since
+   * there is no way of knowing what to send for them.
    */
   public Flow reversed() {
     boolean multiplePorts = steps.stream()
@@ -307,12 +322,7 @@ public class Flow {
         .distinct()
         .count() > 1;
     return new Flow(steps.stream()
-        .map(s -> {
-          int port = multiplePorts && s.getPort() != null ? s.getPort() : 0;
-          return s instanceof SendPacketStep
-              ? (PacketStep) new ReceivePacketStep(s.data.toString(), port)
-              : new SendPacketStep(s.data.toString(), 0, port);
-        })
+        .map(s -> s.reversed(multiplePorts && s.getPort() != null ? s.getPort() : 0))
         .collect(Collectors.toList()));
   }
 
@@ -324,8 +334,7 @@ public class Flow {
    */
   public int getRequiredReadBufferSize(int minimumSize) {
     return steps.stream()
-        .filter(s -> s instanceof ReceivePacketStep)
-        .mapToInt(s -> s.data.getBytes().length)
+        .mapToInt(PacketStep::getExpectedPacketLength)
         .reduce(minimumSize, Math::max);
   }
 
