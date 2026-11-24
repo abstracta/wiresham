@@ -2,6 +2,7 @@ package us.abstracta.wiresham;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * A step in a flow to be executed for a given packet.
@@ -18,11 +19,6 @@ public abstract class PacketStep {
     this.port = port;
   }
 
-  /**
-   * Gets the content of the packet as specified in the flow.
-   *
-   * @return the content of the packet, or null if it has not been set.
-   */
   public abstract String getData();
 
   public abstract void setData(String data);
@@ -35,21 +31,25 @@ public abstract class PacketStep {
     this.port = port;
   }
 
-  public abstract void process(FlowConnection flowConnection)
+  public abstract void process(FlowConnection flowConnection, FlowContext context)
       throws IOException, InterruptedException;
 
   /**
-   * Processes the step using the state of the execution of the flow.
+   * Checks the variables used by the step and registers the ones it defines.
    *
-   * @param flowConnection connection to use for sending or receiving the packet.
-   * @param context state of the execution of the flow, which includes the values captured by
-   * previous steps. Steps add to it the values they capture.
-   * @throws IOException when there is some problem with the connection.
-   * @throws InterruptedException when the thread is interrupted while processing the step.
+   * @param definedVariables names of the variables defined by previous steps of the flow.
+   * @throws IllegalArgumentException when the step uses a variable which is not defined.
    */
-  public void process(FlowConnection flowConnection, FlowContext context)
-      throws IOException, InterruptedException {
-    process(flowConnection);
+  protected void checkVariables(Set<String> definedVariables) {
+  }
+
+  protected int getExpectedPacketLength() {
+    return 0;
+  }
+
+  protected PacketStep reversed(int port) {
+    throw new UnsupportedOperationException(
+        getClass().getSimpleName() + " steps can't be used in client mode");
   }
 
   @Override

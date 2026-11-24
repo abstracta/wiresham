@@ -1,7 +1,6 @@
 package us.abstracta.wiresham;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -43,25 +42,29 @@ public class SendPacketStep extends PacketStep {
     return template != null ? template.toString() : null;
   }
 
-  /**
-   * Sets the content of the packet to send.
-   *
-   * @param data hex dump of the packet, which may include {@code ${name}} references to values
-   * captured by previous steps.
-   */
   @Override
   public void setData(String data) {
     this.template = PacketTemplate.parse(data);
   }
 
-  Set<String> references() {
-    return template != null ? template.getReferences() : Collections.emptySet();
+  @Override
+  protected void checkVariables(Set<String> definedVariables) {
+    template.getReferences().stream()
+        .filter(reference -> !definedVariables.contains(reference))
+        .findFirst()
+        .ifPresent(reference -> {
+          throw new IllegalArgumentException("uses ${" + reference
+              + "}, which is not captured by any previous !client step");
+        });
   }
 
   @Override
-  public void process(FlowConnection connectionDriver)
-      throws IOException, InterruptedException {
-    process(connectionDriver, new FlowContext());
+  protected PacketStep reversed(int port) {
+    if (!template.isLiteral()) {
+      throw new IllegalArgumentException(
+          "Steps using captured values can't be used in client mode");
+    }
+    return new ReceivePacketStep(getData(), port);
   }
 
   @Override

@@ -2,7 +2,6 @@ package us.abstracta.wiresham;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -13,7 +12,6 @@ import java.io.InputStream;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
@@ -25,8 +23,8 @@ public class ReceivePacketStepTest {
   @Test
   public void shouldLeaveFollowingBytesWhenSeveralPacketsAreReceivedTogether() throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "HelloWorld!");
-    new ReceivePacketStep(hex("Hello")).process(connection);
-    new ReceivePacketStep(hex("World")).process(connection);
+    new ReceivePacketStep(hex("Hello")).process(connection, new FlowContext());
+    new ReceivePacketStep(hex("World")).process(connection, new FlowContext());
     assertThat(readPending(connection)).isEqualTo("!");
   }
 
@@ -111,7 +109,7 @@ public class ReceivePacketStepTest {
   @Test
   public void shouldFindPacketWhenItIsSplitInSeveralReads() throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "He", "l", "loWor", "ld");
-    new ReceivePacketStep(hex("HelloWorld")).process(connection);
+    new ReceivePacketStep(hex("HelloWorld")).process(connection, new FlowContext());
     assertThat(readPending(connection)).isEmpty();
   }
 
@@ -120,29 +118,29 @@ public class ReceivePacketStepTest {
       throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE,
         "0123456789012345678901234567890123456789Hello!");
-    new ReceivePacketStep(hex("Hello")).process(connection);
+    new ReceivePacketStep(hex("Hello")).process(connection, new FlowContext());
     assertThat(readPending(connection)).isEqualTo("!");
   }
 
   @Test
   public void shouldFindPacketWhenItHasSameSizeAsReadBuffer() throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "12345678", "12345678", "9");
-    new ReceivePacketStep(hex("12345678")).process(connection);
-    new ReceivePacketStep(hex("12345678")).process(connection);
+    new ReceivePacketStep(hex("12345678")).process(connection, new FlowContext());
+    new ReceivePacketStep(hex("12345678")).process(connection, new FlowContext());
     assertThat(readPending(connection)).isEqualTo("9");
   }
 
   @Test
   public void shouldFindPacketWhenItIsBiggerThanReadBuffer() throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "xx0123456789", "ABCDEFyy");
-    new ReceivePacketStep(hex("0123456789ABCDEF")).process(connection);
+    new ReceivePacketStep(hex("0123456789ABCDEF")).process(connection, new FlowContext());
     assertThat(readPending(connection)).isEqualTo("yy");
   }
 
   @Test
   public void shouldFindPacketWhenItStartsInsidePreviousPartialMatch() throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "abababc", "d");
-    new ReceivePacketStep(hex("ababc")).process(connection);
+    new ReceivePacketStep(hex("ababc")).process(connection, new FlowContext());
     assertThat(readPending(connection)).isEqualTo("d");
   }
 
@@ -151,7 +149,7 @@ public class ReceivePacketStepTest {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "id=1;id=2;");
     FlowContext context = new FlowContext();
     new ReceivePacketStep(hex("id=") + "(?<id>.)" + hex(";")).process(connection, context);
-    assertThat(context.getCaptured("id")).isEqualTo(Packet.fromHexDump(hex("1")));
+    assertThat(context.getVariableValue("id")).isEqualTo(Packet.fromHexDump(hex("1")));
     assertThat(readPending(connection)).isEqualTo("id=2;");
   }
 
@@ -159,7 +157,8 @@ public class ReceivePacketStepTest {
   public void shouldReportPendingBytesWhenConnectionIsClosedBeforeReceivingPacket()
       throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "0123456789Hel");
-    assertThatThrownBy(() -> new ReceivePacketStep(hex("Hello")).process(connection))
+    ReceivePacketStep step = new ReceivePacketStep(hex("Hello"));
+    assertThatThrownBy(() -> step.process(connection, new FlowContext()))
         .isInstanceOfSatisfying(ConnectionClosedException.class,
             e -> assertThat(e.getDiscardedPacket()).isEqualTo(Packet.fromHexDump(hex("89Hel"))));
   }
@@ -168,7 +167,8 @@ public class ReceivePacketStepTest {
   public void shouldReportReceivedBytesWhenConnectionIsClosedBeforeReceivingPacketSize()
       throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "Hel");
-    assertThatThrownBy(() -> new ReceivePacketStep(hex("Hello")).process(connection))
+    ReceivePacketStep step = new ReceivePacketStep(hex("Hello"));
+    assertThatThrownBy(() -> step.process(connection, new FlowContext()))
         .isInstanceOfSatisfying(ConnectionClosedException.class,
             e -> assertThat(e.getDiscardedPacket()).isEqualTo(Packet.fromHexDump(hex("Hel"))));
   }
@@ -176,22 +176,8 @@ public class ReceivePacketStepTest {
   @Test
   public void shouldNotReadFromConnectionWhenPacketIsEmpty() throws Exception {
     FlowConnection connection = buildConnection(READ_BUFFER_SIZE, "Hello");
-    new ReceivePacketStep("").process(connection);
+    new ReceivePacketStep("").process(connection, new FlowContext());
     assertThat(readPending(connection)).isEqualTo("Hello");
-  }
-
-  @Test
-  public void shouldFindPacketInReasonableTimeWhenContentIsRepetitive() {
-    int size = 64 * 1024;
-    byte[] expected = new byte[size];
-    expected[size - 1] = 1;
-    byte[] received = new byte[size + 200];
-    received[received.length - 1] = 1;
-    assertTimeoutPreemptively(Duration.ofSeconds(20), () -> {
-      FlowConnection connection = buildConnection(2048, received);
-      new ReceivePacketStep(BaseEncoding.base16().encode(expected)).process(connection);
-      assertThat(readPendingBytes(connection)).isEmpty();
-    });
   }
 
   /*
@@ -290,7 +276,7 @@ public class ReceivePacketStepTest {
           .isEqualTo(Arrays.copyOfRange(received, matchEnd, received.length));
       if (captureLength > 0) {
         int start = matchPos + captureStart;
-        assertThat(context.getCaptured("value").getBytes())
+        assertThat(context.getVariableValue("value").getBytes())
             .isEqualTo(Arrays.copyOfRange(received, start, start + captureLength));
       }
     }

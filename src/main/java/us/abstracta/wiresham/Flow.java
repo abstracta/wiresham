@@ -78,25 +78,18 @@ public class Flow {
 
   @VisibleForTesting
   public Flow(List<PacketStep> steps) {
-    checkReferences(steps);
+    checkVariables(steps);
     this.steps = steps;
   }
 
-  private static void checkReferences(List<PacketStep> steps) {
-    Set<String> captures = new HashSet<>();
-    int stepNumber = 1;
-    for (PacketStep step : steps) {
-      if (step instanceof ReceivePacketStep) {
-        captures.addAll(((ReceivePacketStep) step).captureNames());
-      } else if (step instanceof SendPacketStep) {
-        for (String reference : ((SendPacketStep) step).references()) {
-          if (!captures.contains(reference)) {
-            throw new IllegalArgumentException("Flow step number " + stepNumber + " uses ${"
-                + reference + "}, which is not captured by any previous !client step");
-          }
-        }
+  private static void checkVariables(List<PacketStep> steps) {
+    Set<String> definedVariables = new HashSet<>();
+    for (int i = 0; i < steps.size(); i++) {
+      try {
+        steps.get(i).checkVariables(definedVariables);
+      } catch (IllegalArgumentException e) {
+        throw new IllegalArgumentException("Flow step number " + (i + 1) + " " + e.getMessage());
       }
-      stepNumber++;
     }
   }
 
@@ -323,30 +316,14 @@ public class Flow {
    * there is no way of knowing what to send for them.
    */
   public Flow reversed() {
-    if (steps.stream().anyMatch(Flow::usesExpressions)) {
-      throw new IllegalArgumentException(
-          "Flows with wildcards, captures or references can't be used in client mode");
-    }
     boolean multiplePorts = steps.stream()
         .map(PacketStep::getPort)
         .filter(Objects::nonNull)
         .distinct()
         .count() > 1;
     return new Flow(steps.stream()
-        .map(s -> {
-          int port = multiplePorts && s.getPort() != null ? s.getPort() : 0;
-          return s instanceof SendPacketStep
-              ? (PacketStep) new ReceivePacketStep(s.getData(), port)
-              : new SendPacketStep(s.getData(), 0, port);
-        })
+        .map(s -> s.reversed(multiplePorts && s.getPort() != null ? s.getPort() : 0))
         .collect(Collectors.toList()));
-  }
-
-  private static boolean usesExpressions(PacketStep step) {
-    if (step instanceof ReceivePacketStep) {
-      return ((ReceivePacketStep) step).usesWildcards();
-    }
-    return step instanceof SendPacketStep && !((SendPacketStep) step).references().isEmpty();
   }
 
   /**
@@ -357,8 +334,7 @@ public class Flow {
    */
   public int getRequiredReadBufferSize(int minimumSize) {
     return steps.stream()
-        .filter(s -> s instanceof ReceivePacketStep)
-        .mapToInt(s -> ((ReceivePacketStep) s).expectedLength())
+        .mapToInt(PacketStep::getExpectedPacketLength)
         .reduce(minimumSize, Math::max);
   }
 

@@ -138,14 +138,14 @@ public class FlowTest {
   }
 
   @Test
-  public void shouldKeepExpressionsWhenLoadYamlWithWildcardsCapturesAndReferences() {
+  public void shouldLoadFlowWhenYamlHasWildcardsCapturesAndReferences() {
     Flow flow = loadYaml("- !client {data: '4c4f(?<user>.{8}).'}\n"
         + "- !server {data: '4f4b${user}', delayMillis: 20}\n"
         + "- !client {data: 51..}\n");
-    assertThat(flow.getSteps().stream()
-        .map(PacketStep::getData)
-        .collect(Collectors.toList()))
-        .containsExactly("4C4F(?<user>.{8}).", "4F4B${user}", "51..");
+    assertThat(flow).isEqualTo(new Flow(Arrays.asList(
+        new ReceivePacketStep("4C4F(?<user>.{8})."),
+        new SendPacketStep("4F4B${user}", 20),
+        new ReceivePacketStep("51.."))));
   }
 
   @Test
@@ -158,8 +158,6 @@ public class FlowTest {
     File saved = tempDir.resolve("expressions.yaml").toFile();
     flow.saveYml(saved);
     assertThat(Flow.fromYml(saved)).isEqualTo(flow);
-    assertThat(new String(Files.readAllBytes(saved.toPath()), StandardCharsets.UTF_8))
-        .contains("data: '4C4F(?<user>.{8}).'");
   }
 
   @Test

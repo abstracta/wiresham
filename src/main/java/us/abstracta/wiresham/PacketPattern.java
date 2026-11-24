@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Expected content of a packet, which may include bytes with any value and named captures.
@@ -16,24 +17,17 @@ import java.util.regex.Pattern;
  */
 final class PacketPattern {
 
-  private static final String CAPTURE_START = "(?<";
-  private static final Pattern REPETITION = Pattern.compile("[1-9][0-9]{0,8}");
-  // avoids running out of memory due to a typo in a flow
-  private static final int MAX_REPETITION = 16 * 1024 * 1024;
-  private static final String SUPPORTED_SYNTAX = "Only hex bytes, '.', '.{n}' and "
-      + "'(?<name>...)' with hex bytes and '.' inside are supported.";
-
   private final String expression;
   private final byte[] bytes;
   private final BitSet wildcards;
-  private final Map<String, int[]> captures;
+  private final Map<String, int[]> captureRanges;
 
   private PacketPattern(String expression, byte[] bytes, BitSet wildcards,
-      Map<String, int[]> captures) {
+      Map<String, int[]> captureRanges) {
     this.expression = expression;
     this.bytes = bytes;
     this.wildcards = wildcards;
-    this.captures = captures;
+    this.captureRanges = captureRanges;
   }
 
   static PacketPattern parse(String expression) {
@@ -45,51 +39,37 @@ final class PacketPattern {
   }
 
   boolean isLiteral() {
-    return wildcards.isEmpty() && captures.isEmpty();
+    return wildcards.isEmpty() && captureRanges.isEmpty();
   }
 
   Set<String> getCaptureNames() {
-    return captures.keySet();
+    return captureRanges.keySet();
   }
 
-  /**
-   * Checks if the bytes of a circular buffer match the pattern.
-   *
-   * @param window circular buffer with as many bytes as the length of the pattern.
-   * @param start position of the oldest byte in the buffer.
-   * @return true if the bytes match the pattern, false otherwise.
-   */
-  boolean matches(byte[] window, int start) {
-    int windowPos = start;
+  boolean matches(byte[] circularBuffer, int oldestBytePos) {
+    int bufferPos = oldestBytePos;
     for (int i = 0; i < bytes.length; i++) {
-      if (window[windowPos] != bytes[i] && !wildcards.get(i)) {
+      if (circularBuffer[bufferPos] != bytes[i] && !wildcards.get(i)) {
         return false;
       }
-      windowPos++;
-      if (windowPos == window.length) {
-        windowPos = 0;
+      bufferPos++;
+      if (bufferPos == circularBuffer.length) {
+        bufferPos = 0;
       }
     }
     return true;
   }
 
-  /**
-   * Gets the captured values from the bytes of a circular buffer which matches the pattern.
-   *
-   * @param window circular buffer with as many bytes as the length of the pattern.
-   * @param start position of the oldest byte in the buffer.
-   * @return the captured values by capture name.
-   */
-  Map<String, Packet> capture(byte[] window, int start) {
-    Map<String, Packet> ret = new LinkedHashMap<>();
-    captures.forEach((name, range) -> ret.put(name, copy(window, start + range[0], range[1])));
-    return ret;
+  Map<String, Packet> capture(byte[] circularBuffer, int oldestBytePos) {
+    return captureRanges.entrySet().stream()
+        .collect(Collectors.toMap(Map.Entry::getKey,
+            e -> copy(circularBuffer, oldestBytePos + e.getValue()[0], e.getValue()[1])));
   }
 
-  static Packet copy(byte[] window, long start, int length) {
+  static Packet copy(byte[] circularBuffer, long start, int length) {
     byte[] ret = new byte[length];
     for (int i = 0; i < length; i++) {
-      ret[i] = window[(int) ((start + i) % window.length)];
+      ret[i] = circularBuffer[(int) ((start + i) % circularBuffer.length)];
     }
     return Packet.fromBytes(ret, 0, length);
   }
@@ -99,47 +79,45 @@ final class PacketPattern {
     return expression;
   }
 
-  private static final class Parser {
+  private static final class Parser extends PacketParser {
 
-    private final String text;
-    private final StringBuilder normalized = new StringBuilder();
+    private static final String CAPTURE_PREFIX = "(?<";
+    private static final Pattern REPETITION = Pattern.compile("[1-9][0-9]{0,8}");
+    // avoids running out of memory due to a typo in a flow
+    private static final int MAX_REPETITION = 16 * 1024 * 1024;
+
     private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     private final BitSet wildcards = new BitSet();
-    private final Map<String, int[]> captures = new LinkedHashMap<>();
-    private int pos;
+    private final Map<String, int[]> captureRanges = new LinkedHashMap<>();
 
     private Parser(String text) {
-      this.text = text;
+      super(text, "Only hex bytes, '.', '.{n}' and '(?<name>...)' with hex bytes and '.' inside "
+          + "are supported.");
     }
 
     private PacketPattern parse() {
-      while (pos < text.length()) {
-        if (text.startsWith(CAPTURE_START, pos)) {
+      while (hasNext()) {
+        if (nextIs(CAPTURE_PREFIX)) {
           parseCapture();
         } else {
           parseByte();
         }
       }
-      return new PacketPattern(normalized.toString(), bytes.toByteArray(), wildcards, captures);
+      return new PacketPattern(normalized.toString(), bytes.toByteArray(), wildcards,
+          captureRanges);
     }
 
     private void parseCapture() {
       int startPos = pos;
-      int nameEnd = text.indexOf('>', pos);
-      String name = nameEnd == -1 ? "" : text.substring(pos + CAPTURE_START.length(), nameEnd);
-      if (!PacketExpressions.CAPTURE_NAME.matcher(name).matches()) {
-        throw buildException("Invalid capture name", startPos);
-      }
-      if (captures.containsKey(name)) {
+      String name = parseVariableName(CAPTURE_PREFIX, '>');
+      if (captureRanges.containsKey(name)) {
         throw buildException("Capture '" + name + "' is defined more than once", startPos);
       }
-      pos = nameEnd + 1;
-      normalized.append(CAPTURE_START).append(name).append('>');
       int startByte = bytes.size();
-      while (pos < text.length() && text.charAt(pos) != ')') {
+      while (hasNext() && !nextIs(")")) {
         parseByte();
       }
-      if (pos == text.length()) {
+      if (!hasNext()) {
         throw buildException("Capture '" + name + "' is not closed", startPos);
       }
       if (bytes.size() == startByte) {
@@ -147,31 +125,23 @@ final class PacketPattern {
       }
       pos++;
       normalized.append(')');
-      captures.put(name, new int[]{startByte, bytes.size() - startByte});
+      captureRanges.put(name, new int[]{startByte, bytes.size() - startByte});
     }
 
     private void parseByte() {
-      char c = text.charAt(pos);
-      if (c == '.') {
+      if (nextIs(".")) {
         pos++;
         normalized.append('.');
         int count = parseRepetition();
         wildcards.set(bytes.size(), bytes.size() + count);
         bytes.write(new byte[count], 0, count);
-      } else if (PacketExpressions.isHexDigit(c)) {
-        if (!PacketExpressions.isHexByte(text, pos)) {
-          throw buildException("Incomplete hex byte", pos);
-        }
-        bytes.write(PacketExpressions.parseHexByte(text, pos));
-        normalized.append(text.substring(pos, pos + 2).toUpperCase());
-        pos += 2;
       } else {
-        throw buildException("Unsupported '" + c + "'", pos);
+        bytes.write(parseHexByte());
       }
     }
 
     private int parseRepetition() {
-      if (pos == text.length() || text.charAt(pos) != '{') {
+      if (!nextIs("{")) {
         return 1;
       }
       int end = text.indexOf('}', pos);
@@ -186,10 +156,6 @@ final class PacketPattern {
       pos = end + 1;
       normalized.append('{').append(count).append('}');
       return ret;
-    }
-
-    private IllegalArgumentException buildException(String problem, int position) {
-      return PacketExpressions.buildException(problem, position, text, SUPPORTED_SYNTAX);
     }
 
   }
